@@ -78,6 +78,9 @@ void MainComponent::prepareToPlay(int samplesPerBlockExpected, double sampleRate
     toneStateLeft = 0.0f;
     toneStateRight = 0.0f;
 
+    gateEnvelope = 0.0f;
+    gateGain = 1.0f;
+
     updateToneCoefficient();
     updateEqFilters();
     updateReverbParameters();
@@ -129,8 +132,22 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
     {
         float inputSample = leftChannelData[sampleIndex];
 
-        if (std::abs(inputSample) < gateValue)
-            inputSample *= 0.08f;
+        // Smooth noise gate
+        const float rectifiedSample = std::abs(inputSample);
+
+        const float envelopeAttack = 0.20f;
+        const float envelopeRelease = 0.005f;
+
+        if (rectifiedSample > gateEnvelope)
+            gateEnvelope += envelopeAttack * (rectifiedSample - gateEnvelope);
+        else
+            gateEnvelope += envelopeRelease * (rectifiedSample - gateEnvelope);
+
+        const float targetGateGain = (gateEnvelope > gateValue) ? 1.0f : 0.0f;
+        const float gateSmoothing = 0.02f;
+        gateGain += gateSmoothing * (targetGateGain - gateGain);
+
+        inputSample *= gateGain;
 
         inputSample *= inputGain;
         inputSample = processDriveSample(inputSample);

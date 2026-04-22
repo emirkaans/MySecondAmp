@@ -95,6 +95,9 @@ private:
     float toneStateLeft = 0.0f;
     float toneStateRight = 0.0f;
 
+    float gateEnvelope = 0.0f;
+    float gateGain = 1.0f;
+
     juce::IIRFilter bassFilterLeft;
     juce::IIRFilter bassFilterRight;
 
