@@ -84,7 +84,7 @@ void MainComponent::prepareToPlay(int samplesPerBlockExpected, double sampleRate
 
     reverbProcessor.reset();
 
-    const int delayBufferSize = (int)(currentSampleRate * 2.0);
+    const int delayBufferSize = static_cast<int>(currentSampleRate * 2.0);
     delayBuffer.setSize(2, delayBufferSize);
     delayBuffer.clear();
     delayWritePosition = 0;
@@ -92,85 +92,84 @@ void MainComponent::prepareToPlay(int samplesPerBlockExpected, double sampleRate
 
 void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferToFill)
 {
-    auto* buffer = bufferToFill.buffer;
+    auto* audioBuffer = bufferToFill.buffer;
 
-    if (buffer == nullptr)
+    if (audioBuffer == nullptr)
         return;
 
     const int startSample = bufferToFill.startSample;
     const int numSamples = bufferToFill.numSamples;
-    const int numChannels = juce::jmin(2, buffer->getNumChannels());
+    const int numChannels = audioBuffer->getNumChannels();
 
     if (numChannels <= 0)
         return;
 
-    float maxLevel = 0.0f;
+    auto* leftChannelData = audioBuffer->getWritePointer(0, startSample);
+    float* rightChannelData = (numChannels > 1) ? audioBuffer->getWritePointer(1, startSample) : nullptr;
 
     const int delayBufferLength = delayBuffer.getNumSamples();
-    const int delaySamples = juce::jlimit(1, delayBufferLength - 1,
-        (int)(currentSampleRate * (delayTimeMs / 1000.0f)));
+
+    if (delayBufferLength <= 1)
+        return;
+
+    const int delaySamples = juce::jlimit(
+        1,
+        delayBufferLength - 1,
+        static_cast<int>(currentSampleRate * (delayTimeMs / 1000.0f))
+    );
+
+    const float currentDelayFeedback = 0.18f + (delayMixValue * 0.45f);
+
+    float* delayLeftData = delayBuffer.getWritePointer(0);
+    float* delayRightData = delayBuffer.getWritePointer(1);
+
+    float maxLevel = 0.0f;
 
     for (int sampleIndex = 0; sampleIndex < numSamples; ++sampleIndex)
     {
+        float inputSample = leftChannelData[sampleIndex];
+
+        if (std::abs(inputSample) < gateValue)
+            inputSample *= 0.08f;
+
+        inputSample *= inputGain;
+        inputSample = processDriveSample(inputSample);
+
+        inputSample = bassFilterLeft.processSingleSampleRaw(inputSample);
+        inputSample = midFilterLeft.processSingleSampleRaw(inputSample);
+        inputSample = trebleFilterLeft.processSingleSampleRaw(inputSample);
+
+        inputSample = processToneSample(inputSample, 0);
+
         const int readPosition = (delayWritePosition + delayBufferLength - delaySamples) % delayBufferLength;
 
-        for (int channel = 0; channel < numChannels; ++channel)
-        {
-            float* channelData = buffer->getWritePointer(channel, startSample);
-            float* delayData = delayBuffer.getWritePointer(channel);
+        const float delayedLeftSample = delayLeftData[readPosition];
+        const float monoOutputSample = (inputSample * (1.0f - delayMixValue))
+            + (delayedLeftSample * delayMixValue);
 
-            float processedSample = channelData[sampleIndex];
+        delayLeftData[delayWritePosition] = inputSample + (delayedLeftSample * currentDelayFeedback);
+        delayRightData[delayWritePosition] = delayLeftData[delayWritePosition];
 
-            if (std::abs(processedSample) < gateValue)
-                processedSample *= 0.08f;
+        const float finalSample = monoOutputSample * masterValue;
 
-            processedSample *= inputGain;
-            processedSample = processDriveSample(processedSample);
+        leftChannelData[sampleIndex] = finalSample;
 
-            if (channel == 0)
-            {
-                processedSample = bassFilterLeft.processSingleSampleRaw(processedSample);
-                processedSample = midFilterLeft.processSingleSampleRaw(processedSample);
-                processedSample = trebleFilterLeft.processSingleSampleRaw(processedSample);
-            }
-            else
-            {
-                processedSample = bassFilterRight.processSingleSampleRaw(processedSample);
-                processedSample = midFilterRight.processSingleSampleRaw(processedSample);
-                processedSample = trebleFilterRight.processSingleSampleRaw(processedSample);
-            }
+        if (rightChannelData != nullptr)
+            rightChannelData[sampleIndex] = finalSample;
 
-            processedSample = processToneSample(processedSample, channel);
-
-            const float delayedSample = delayData[readPosition];
-            const float outputSample = (processedSample * (1.0f - delayMixValue)) + (delayedSample * delayMixValue);
-
-            delayData[delayWritePosition] = processedSample + (delayedSample * delayFeedback);
-
-            const float finalSample = outputSample * masterValue;
-            channelData[sampleIndex] = finalSample;
-
-            const float absoluteValue = std::abs(finalSample);
-            if (absoluteValue > maxLevel)
-                maxLevel = absoluteValue;
-        }
+        const float absoluteValue = std::abs(finalSample);
+        if (absoluteValue > maxLevel)
+            maxLevel = absoluteValue;
 
         ++delayWritePosition;
         if (delayWritePosition >= delayBufferLength)
             delayWritePosition = 0;
     }
 
-    if (numChannels >= 2)
-    {
-        float* leftChannel = buffer->getWritePointer(0, startSample);
-        float* rightChannel = buffer->getWritePointer(1, startSample);
-        reverbProcessor.processStereo(leftChannel, rightChannel, numSamples);
-    }
+    if (rightChannelData != nullptr)
+        reverbProcessor.processStereo(leftChannelData, rightChannelData, numSamples);
     else
-    {
-        float* monoChannel = buffer->getWritePointer(0, startSample);
-        reverbProcessor.processMono(monoChannel, numSamples);
-    }
+        reverbProcessor.processMono(leftChannelData, numSamples);
 
     currentLevel = maxLevel;
 }
@@ -214,16 +213,19 @@ void MainComponent::paint(juce::Graphics& g)
     const int meterHeight = 220;
 
     g.setColour(juce::Colour::fromRGB(70, 64, 88));
-    g.fillRoundedRectangle((float)meterX, (float)meterY, (float)meterWidth, (float)meterHeight, 8.0f);
+    g.fillRoundedRectangle(static_cast<float>(meterX), static_cast<float>(meterY),
+        static_cast<float>(meterWidth), static_cast<float>(meterHeight), 8.0f);
 
-    const int filledHeight = (int)(meterHeight * juce::jlimit(0.0f, 1.0f, currentLevel));
+    const int filledHeight = static_cast<int>(meterHeight * juce::jlimit(0.0f, 1.0f, currentLevel));
     const int filledY = meterY + (meterHeight - filledHeight);
 
     g.setColour(juce::Colour::fromRGB(180, 120, 255));
-    g.fillRoundedRectangle((float)meterX, (float)filledY, (float)meterWidth, (float)filledHeight, 8.0f);
+    g.fillRoundedRectangle(static_cast<float>(meterX), static_cast<float>(filledY),
+        static_cast<float>(meterWidth), static_cast<float>(filledHeight), 8.0f);
 
     g.setColour(juce::Colours::white.withAlpha(0.9f));
-    g.drawRoundedRectangle((float)meterX, (float)meterY, (float)meterWidth, (float)meterHeight, 8.0f, 1.0f);
+    g.drawRoundedRectangle(static_cast<float>(meterX), static_cast<float>(meterY),
+        static_cast<float>(meterWidth), static_cast<float>(meterHeight), 8.0f, 1.0f);
 }
 
 void MainComponent::resized()
@@ -281,52 +283,52 @@ void MainComponent::sliderValueChanged(juce::Slider* slider)
 {
     if (slider == &gainSlider)
     {
-        inputGain = (float)gainSlider.getValue();
+        inputGain = static_cast<float>(gainSlider.getValue());
     }
     else if (slider == &toneSlider)
     {
-        toneValue = (float)toneSlider.getValue();
+        toneValue = static_cast<float>(toneSlider.getValue());
         updateToneCoefficient();
     }
     else if (slider == &driveSlider)
     {
-        driveValue = (float)driveSlider.getValue();
+        driveValue = static_cast<float>(driveSlider.getValue());
     }
     else if (slider == &bassSlider)
     {
-        bassValue = (float)bassSlider.getValue();
+        bassValue = static_cast<float>(bassSlider.getValue());
         updateEqFilters();
     }
     else if (slider == &midSlider)
     {
-        midValue = (float)midSlider.getValue();
+        midValue = static_cast<float>(midSlider.getValue());
         updateEqFilters();
     }
     else if (slider == &trebleSlider)
     {
-        trebleValue = (float)trebleSlider.getValue();
+        trebleValue = static_cast<float>(trebleSlider.getValue());
         updateEqFilters();
     }
     else if (slider == &masterSlider)
     {
-        masterValue = (float)masterSlider.getValue();
+        masterValue = static_cast<float>(masterSlider.getValue());
     }
     else if (slider == &gateSlider)
     {
-        gateValue = (float)gateSlider.getValue();
+        gateValue = static_cast<float>(gateSlider.getValue());
     }
     else if (slider == &reverbSlider)
     {
-        reverbValue = (float)reverbSlider.getValue();
+        reverbValue = static_cast<float>(reverbSlider.getValue());
         updateReverbParameters();
     }
     else if (slider == &delayTimeSlider)
     {
-        delayTimeMs = (float)delayTimeSlider.getValue();
+        delayTimeMs = static_cast<float>(delayTimeSlider.getValue());
     }
     else if (slider == &delayMixSlider)
     {
-        delayMixValue = (float)delayMixSlider.getValue();
+        delayMixValue = static_cast<float>(delayMixSlider.getValue());
     }
 }
 
@@ -335,7 +337,6 @@ void MainComponent::timerCallback()
     meterLabel.setText("Input Level: " + juce::String(currentLevel, 2),
         juce::dontSendNotification);
 
-    delayFeedback = 0.18f + (delayMixValue * 0.45f);
     repaint();
 }
 
@@ -366,15 +367,20 @@ void MainComponent::updateToneCoefficient()
     const float cutoffFrequency = minimumCutoff + (toneValue * (maximumCutoff - minimumCutoff));
 
     const float x = std::exp(-2.0f * juce::MathConstants<float>::pi
-        * cutoffFrequency / (float)currentSampleRate);
+        * cutoffFrequency / static_cast<float>(currentSampleRate));
     toneCoefficient = 1.0f - x;
 }
 
 void MainComponent::updateEqFilters()
 {
-    const auto bassCoefficients = juce::IIRCoefficients::makeLowShelf(currentSampleRate, 180.0, 0.707f, juce::Decibels::decibelsToGain(bassValue));
-    const auto midCoefficients = juce::IIRCoefficients::makePeakFilter(currentSampleRate, 900.0, 0.8f, juce::Decibels::decibelsToGain(midValue));
-    const auto trebleCoefficients = juce::IIRCoefficients::makeHighShelf(currentSampleRate, 2800.0, 0.707f, juce::Decibels::decibelsToGain(trebleValue));
+    const auto bassCoefficients = juce::IIRCoefficients::makeLowShelf(
+        currentSampleRate, 180.0, 0.707f, juce::Decibels::decibelsToGain(bassValue));
+
+    const auto midCoefficients = juce::IIRCoefficients::makePeakFilter(
+        currentSampleRate, 900.0, 0.8f, juce::Decibels::decibelsToGain(midValue));
+
+    const auto trebleCoefficients = juce::IIRCoefficients::makeHighShelf(
+        currentSampleRate, 2800.0, 0.707f, juce::Decibels::decibelsToGain(trebleValue));
 
     bassFilterLeft.setCoefficients(bassCoefficients);
     bassFilterRight.setCoefficients(bassCoefficients);
