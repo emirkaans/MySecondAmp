@@ -1,0 +1,16 @@
+# Visual Studio
+.vs/
+*.VC.db
+*.VC.opendb
+
+# Build folders
+Builds/
+Binaries/
+Intermediate/
+
+# JUCE specific
+JuceLibraryCode/
+
+# OS
+.DS_Store
+Thumbs.db
