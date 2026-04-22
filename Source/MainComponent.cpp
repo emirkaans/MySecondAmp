@@ -359,15 +359,26 @@ void MainComponent::timerCallback()
 
 float MainComponent::processDriveSample(float inputSample) const
 {
-    const float preGain = 1.0f + (driveValue * 42.0f);
-    const float clippedSample = std::tanh(inputSample * preGain);
+    // Tight metal-style pre-emphasis:
+    // lows biraz sıkılaşsın, pick attack öne gelsin
+    const float tightInput = inputSample * (1.0f + driveValue * 6.0f);
 
-    const float hardEdge = juce::jlimit(-0.95f, 0.95f, clippedSample * (1.15f + driveValue));
-    const float blend = 0.15f + (driveValue * 0.85f);
-    const float mixed = (inputSample * (1.0f - blend)) + (hardEdge * blend);
+    // Stage 1: soft saturation
+    const float stageOne = std::tanh(tightInput * (1.8f + driveValue * 4.0f));
 
-    const float outputTrim = 1.0f / (1.0f + driveValue * 4.2f);
-    return mixed * outputTrim * 1.55f;
+    // Stage 2: more aggressive clipping
+    const float stageTwoInput = stageOne * (1.5f + driveValue * 6.0f);
+    const float stageTwo = std::tanh(stageTwoInput);
+
+    // Blend dry çok az kalsın, ama tamamen de yok olmasın
+    const float dryBlend = 0.10f;
+    const float wetBlend = 1.0f - dryBlend;
+    const float mixedSample = (inputSample * dryBlend) + (stageTwo * wetBlend);
+
+    // Output trim
+    const float outputTrim = 0.55f - (driveValue * 0.12f);
+
+    return mixedSample * outputTrim;
 }
 
 float MainComponent::processToneSample(float inputSample, int channel)
