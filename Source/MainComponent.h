@@ -2,6 +2,27 @@
 
 #include <JuceHeader.h>
 #include <cmath>
+#include <memory>
+
+class AmpLookAndFeel final : public juce::LookAndFeel_V4
+{
+public:
+    void drawRotarySlider(juce::Graphics& graphics,
+                          int x,
+                          int y,
+                          int width,
+                          int height,
+                          float sliderPosProportional,
+                          float rotaryStartAngle,
+                          float rotaryEndAngle,
+                          juce::Slider& slider) override;
+
+    void drawButtonBackground(juce::Graphics& graphics,
+                              juce::Button& button,
+                              const juce::Colour& backgroundColour,
+                              bool isMouseOverButton,
+                              bool isButtonDown) override;
+};
 
 class MainComponent : public juce::AudioAppComponent,
                       public juce::Slider::Listener,
@@ -37,9 +58,15 @@ private:
     float processDriveSample(float inputSample) const;
     float processToneSample(float inputSample, int channel);
 
-    void layoutControlsSingleColumn(int contentWidth);
+    void layoutAmpControls(juce::Rectangle<int> contentArea);
     void drawLevelMeter(juce::Graphics& graphics, juce::Rectangle<int> meterArea) const;
     void openAudioSettingsWindow();
+
+    void drawAmpBackground(juce::Graphics& graphics, juce::Rectangle<int> area);
+    void drawAmpHeader(juce::Graphics& graphics, juce::Rectangle<int> area);
+    void drawAmpFooter(juce::Graphics& graphics, juce::Rectangle<int> area);
+
+    std::unique_ptr<AmpLookAndFeel> ampLookAndFeel;
 
     juce::Viewport controlsViewport;
     juce::Component controlsContent;
@@ -125,8 +152,10 @@ private:
     int delayWritePosition = 0;
     float delayFeedback = 0.32f;
 
-    int controlsContentHeight = 0;
     juce::Rectangle<int> levelMeterBounds;
+    juce::Rectangle<int> ampBodyBounds;
+    juce::Rectangle<int> headerBounds;
+    juce::Rectangle<int> footerBounds;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

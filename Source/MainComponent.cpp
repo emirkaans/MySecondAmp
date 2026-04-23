@@ -5,9 +5,9 @@ namespace
     void setupSectionLabel(juce::Label& label, juce::Component& parent, const juce::String& text)
     {
         label.setText(text, juce::dontSendNotification);
-        label.setColour(juce::Label::textColourId, juce::Colour::fromRGB(225, 215, 255));
-        label.setFont(juce::Font(16.0f, juce::Font::bold));
-        label.setJustificationType(juce::Justification::centredLeft);
+        label.setColour(juce::Label::textColourId, juce::Colour::fromRGB(214, 183, 102));
+        label.setFont(juce::Font(15.5f, juce::Font::bold));
+        label.setJustificationType(juce::Justification::centred);
         parent.addAndMakeVisible(label);
     }
 
@@ -40,15 +40,154 @@ namespace
     {
         return juce::jlimit(0.0f, 1.0f, value);
     }
+
+    void styleValueLabel(juce::Label& label)
+    {
+        label.setColour(juce::Label::textColourId, juce::Colour::fromRGB(238, 230, 210));
+        label.setFont(juce::Font(13.5f, juce::Font::bold));
+        label.setJustificationType(juce::Justification::centred);
+    }
+
+    void styleRotarySliderTextbox(juce::Slider& slider)
+    {
+        slider.setColour(juce::Slider::textBoxTextColourId, juce::Colour::fromRGB(245, 238, 220));
+        slider.setColour(juce::Slider::textBoxBackgroundColourId, juce::Colour::fromRGB(28, 28, 30));
+        slider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colour::fromRGB(110, 100, 80));
+    }
+}
+
+void AmpLookAndFeel::drawRotarySlider(juce::Graphics& graphics,
+                                      int x,
+                                      int y,
+                                      int width,
+                                      int height,
+                                      float sliderPosProportional,
+                                      float rotaryStartAngle,
+                                      float rotaryEndAngle,
+                                      juce::Slider& slider)
+{
+    juce::ignoreUnused(slider);
+
+    const auto bounds = juce::Rectangle<float>(static_cast<float>(x),
+                                               static_cast<float>(y),
+                                               static_cast<float>(width),
+                                               static_cast<float>(height)).reduced(8.0f);
+
+    const float diameter = juce::jmin(bounds.getWidth(), bounds.getHeight());
+    const auto knobBounds = juce::Rectangle<float>(diameter, diameter).withCentre(bounds.getCentre());
+
+    graphics.setColour(juce::Colour::fromRGB(20, 20, 22));
+    graphics.fillEllipse(knobBounds.translated(2.5f, 4.0f));
+
+    juce::ColourGradient knobGradient(juce::Colour::fromRGB(72, 72, 76),
+                                      knobBounds.getCentreX(),
+                                      knobBounds.getY(),
+                                      juce::Colour::fromRGB(24, 24, 26),
+                                      knobBounds.getCentreX(),
+                                      knobBounds.getBottom(),
+                                      false);
+    graphics.setGradientFill(knobGradient);
+    graphics.fillEllipse(knobBounds);
+
+    graphics.setColour(juce::Colour::fromRGB(120, 120, 126));
+    graphics.drawEllipse(knobBounds, 1.5f);
+
+    const auto arcBounds = knobBounds.expanded(8.0f);
+
+    juce::Path backgroundArc;
+    backgroundArc.addCentredArc(arcBounds.getCentreX(),
+                                arcBounds.getCentreY(),
+                                arcBounds.getWidth() * 0.5f,
+                                arcBounds.getHeight() * 0.5f,
+                                0.0f,
+                                rotaryStartAngle,
+                                rotaryEndAngle,
+                                true);
+
+    graphics.setColour(juce::Colour::fromRGB(80, 72, 54));
+    graphics.strokePath(backgroundArc, juce::PathStrokeType(3.0f));
+
+    const float angle = rotaryStartAngle + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
+
+    juce::Path valueArc;
+    valueArc.addCentredArc(arcBounds.getCentreX(),
+                           arcBounds.getCentreY(),
+                           arcBounds.getWidth() * 0.5f,
+                           arcBounds.getHeight() * 0.5f,
+                           0.0f,
+                           rotaryStartAngle,
+                           angle,
+                           true);
+
+    graphics.setColour(juce::Colour::fromRGB(230, 190, 90));
+    graphics.strokePath(valueArc, juce::PathStrokeType(3.2f));
+
+    juce::Path pointer;
+    const float pointerLength = diameter * 0.34f;
+    const float pointerThickness = 3.0f;
+
+    pointer.addRoundedRectangle(-pointerThickness * 0.5f,
+                                -pointerLength,
+                                pointerThickness,
+                                pointerLength,
+                                1.5f);
+
+    graphics.setColour(juce::Colour::fromRGB(245, 220, 160));
+    graphics.fillPath(pointer,
+                      juce::AffineTransform::rotation(angle)
+                          .translated(knobBounds.getCentreX(), knobBounds.getCentreY()));
+
+    graphics.setColour(juce::Colour::fromRGB(185, 185, 188));
+    graphics.fillEllipse(knobBounds.getCentreX() - 4.0f,
+                         knobBounds.getCentreY() - 4.0f,
+                         8.0f,
+                         8.0f);
+}
+
+void AmpLookAndFeel::drawButtonBackground(juce::Graphics& graphics,
+                                          juce::Button& button,
+                                          const juce::Colour& backgroundColour,
+                                          bool isMouseOverButton,
+                                          bool isButtonDown)
+{
+    juce::ignoreUnused(backgroundColour);
+
+    auto bounds = button.getLocalBounds().toFloat().reduced(1.0f);
+
+    juce::Colour baseColour = juce::Colour::fromRGB(55, 55, 58);
+
+    if (isButtonDown)
+        baseColour = baseColour.brighter(0.18f);
+    else if (isMouseOverButton)
+        baseColour = baseColour.brighter(0.08f);
+
+    graphics.setColour(juce::Colours::black.withAlpha(0.35f));
+    graphics.fillRoundedRectangle(bounds.translated(0.0f, 2.0f), 8.0f);
+
+    juce::ColourGradient buttonGradient(baseColour.brighter(0.12f),
+                                        bounds.getCentreX(),
+                                        bounds.getY(),
+                                        baseColour.darker(0.18f),
+                                        bounds.getCentreX(),
+                                        bounds.getBottom(),
+                                        false);
+    graphics.setGradientFill(buttonGradient);
+    graphics.fillRoundedRectangle(bounds, 8.0f);
+
+    graphics.setColour(juce::Colour::fromRGB(120, 120, 125));
+    graphics.drawRoundedRectangle(bounds, 8.0f, 1.0f);
 }
 
 MainComponent::MainComponent()
 {
-    setSize(1180, 760);
+    ampLookAndFeel = std::make_unique<AmpLookAndFeel>();
+    setLookAndFeel(ampLookAndFeel.get());
+
+    setSize(1280, 760);
     setAudioChannels(2, 2);
 
     controlsViewport.setViewedComponent(&controlsContent, false);
-    controlsViewport.setScrollBarsShown(true, false);
+    controlsViewport.setScrollBarsShown(false, false);
     addAndMakeVisible(controlsViewport);
 
     audioSettingsButton.onClick = [this]()
@@ -57,35 +196,36 @@ MainComponent::MainComponent()
     };
     addAndMakeVisible(audioSettingsButton);
 
-    setupSlider(gainSlider, gainLabel, "Input Gain", 0.0, 4.0, 0.01, 1.0);
-    setupSlider(toneSlider, toneLabel, "Tone", 0.0, 1.0, 0.01, 0.55);
-    setupSlider(driveSlider, driveLabel, "Drive", 0.0, 1.0, 0.01, 0.22);
+    setupSlider(gainSlider, gainLabel, "INPUT", 0.0, 4.0, 0.01, 1.0);
+    setupSlider(toneSlider, toneLabel, "TONE", 0.0, 1.0, 0.01, 0.55);
+    setupSlider(driveSlider, driveLabel, "DRIVE", 0.0, 1.0, 0.01, 0.22);
 
-    setupSlider(bassSlider, bassLabel, "Bass", -18.0, 18.0, 0.1, 0.0);
-    setupSlider(midSlider, midLabel, "Mid", -18.0, 18.0, 0.1, 0.0);
-    setupSlider(trebleSlider, trebleLabel, "Treble", -18.0, 18.0, 0.1, 0.0);
+    setupSlider(bassSlider, bassLabel, "BASS", -18.0, 18.0, 0.1, 0.0);
+    setupSlider(midSlider, midLabel, "MID", -18.0, 18.0, 0.1, 0.0);
+    setupSlider(trebleSlider, trebleLabel, "TREBLE", -18.0, 18.0, 0.1, 0.0);
 
-    setupSlider(masterSlider, masterLabel, "Master", 0.0, 1.2, 0.01, 0.85);
-    setupSlider(gateSlider, gateLabel, "Noise Gate Threshold (dB)", -80.0, -20.0, 1.0, -55.0);
+    setupSlider(masterSlider, masterLabel, "MASTER", 0.0, 1.2, 0.01, 0.85);
+    setupSlider(gateSlider, gateLabel, "GATE", -80.0, -20.0, 1.0, -55.0);
 
-    setupSlider(reverbSlider, reverbLabel, "Reverb", 0.0, 1.0, 0.01, 0.12);
-    setupSlider(delayTimeSlider, delayTimeLabel, "Delay Time (ms)", 50.0, 900.0, 1.0, 320.0);
-    setupSlider(delayMixSlider, delayMixLabel, "Delay Mix", 0.0, 0.65, 0.01, 0.18);
+    setupSlider(reverbSlider, reverbLabel, "REVERB", 0.0, 1.0, 0.01, 0.12);
+    setupSlider(delayTimeSlider, delayTimeLabel, "DELAY", 50.0, 900.0, 1.0, 320.0);
+    setupSlider(delayMixSlider, delayMixLabel, "MIX", 0.0, 0.65, 0.01, 0.18);
 
     gateSlider.setTextValueSuffix(" dB");
+    delayTimeSlider.setTextValueSuffix(" ms");
 
     setupSectionLabel(inputSectionLabel, controlsContent, "INPUT");
     setupSectionLabel(ampSectionLabel, controlsContent, "AMP");
     setupSectionLabel(eqSectionLabel, controlsContent, "EQ");
     setupSectionLabel(fxSectionLabel, controlsContent, "FX");
 
-    meterLabel.setText("Input Level: 0.00", juce::dontSendNotification);
-    meterLabel.setColour(juce::Label::textColourId, juce::Colours::white);
-    meterLabel.setJustificationType(juce::Justification::centredLeft);
+    meterLabel.setText("LEVEL", juce::dontSendNotification);
+    meterLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(220, 210, 180));
+    meterLabel.setFont(juce::Font(13.0f, juce::Font::bold));
+    meterLabel.setJustificationType(juce::Justification::centred);
     controlsContent.addAndMakeVisible(meterLabel);
 
-    audioSettingsButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(90, 70, 130));
-    audioSettingsButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    audioSettingsButton.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(250, 245, 235));
 
     updateToneCoefficient();
     updateEqFilters();
@@ -96,6 +236,8 @@ MainComponent::MainComponent()
 
 MainComponent::~MainComponent()
 {
+    setLookAndFeel(nullptr);
+    ampLookAndFeel.reset();
     shutdownAudio();
 }
 
@@ -108,14 +250,18 @@ void MainComponent::setupSlider(juce::Slider& slider,
                                 double startValue)
 {
     label.setText(text, juce::dontSendNotification);
-    label.setColour(juce::Label::textColourId, juce::Colours::white);
-    label.setJustificationType(juce::Justification::centredLeft);
+    styleValueLabel(label);
     controlsContent.addAndMakeVisible(label);
 
+    slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    slider.setRotaryParameters(juce::degreesToRadians(210.0f),
+                               juce::degreesToRadians(510.0f),
+                               true);
     slider.setRange(minValue, maxValue, interval);
     slider.setValue(startValue);
-    slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 90, 24);
+    slider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 72, 20);
     slider.addListener(this);
+    styleRotarySliderTextbox(slider);
     controlsContent.addAndMakeVisible(slider);
 }
 
@@ -286,140 +432,288 @@ void MainComponent::releaseResources()
 {
 }
 
+void MainComponent::drawAmpBackground(juce::Graphics& graphics, juce::Rectangle<int> area)
+{
+    juce::ColourGradient outerGradient(juce::Colour::fromRGB(30, 22, 14),
+                                       area.getTopLeft().toFloat(),
+                                       juce::Colour::fromRGB(10, 10, 10),
+                                       area.getBottomRight().toFloat(),
+                                       false);
+    graphics.setGradientFill(outerGradient);
+    graphics.fillRoundedRectangle(area.toFloat(), 26.0f);
+
+    graphics.setColour(juce::Colour::fromRGB(86, 58, 26).withAlpha(0.85f));
+    graphics.drawRoundedRectangle(area.toFloat().reduced(1.5f), 26.0f, 3.0f);
+
+    auto innerArea = area.reduced(14);
+
+    graphics.setColour(juce::Colour::fromRGB(24, 24, 24));
+    graphics.fillRoundedRectangle(innerArea.toFloat(), 18.0f);
+
+    for (int lineY = innerArea.getY() + 8; lineY < innerArea.getBottom(); lineY += 12)
+    {
+        graphics.setColour(juce::Colours::black.withAlpha(0.18f));
+        graphics.drawLine(static_cast<float>(innerArea.getX() + 8),
+                          static_cast<float>(lineY),
+                          static_cast<float>(innerArea.getRight() - 8),
+                          static_cast<float>(lineY),
+                          1.0f);
+    }
+}
+
+void MainComponent::drawAmpHeader(juce::Graphics& graphics, juce::Rectangle<int> area)
+{
+    juce::ColourGradient brassGradient(juce::Colour::fromRGB(205, 168, 88),
+                                       area.getTopLeft().toFloat(),
+                                       juce::Colour::fromRGB(120, 88, 32),
+                                       area.getBottomRight().toFloat(),
+                                       false);
+    graphics.setGradientFill(brassGradient);
+    graphics.fillRoundedRectangle(area.toFloat(), 18.0f);
+
+    auto highlightArea = area.removeFromTop(16);
+    graphics.setColour(juce::Colour::fromRGB(255, 238, 185).withAlpha(0.30f));
+    graphics.fillRoundedRectangle(highlightArea.toFloat(), 18.0f);
+
+    graphics.setColour(juce::Colour::fromRGB(74, 48, 18));
+    graphics.drawRoundedRectangle(headerBounds.toFloat(), 18.0f, 1.4f);
+
+    graphics.setColour(juce::Colour::fromRGB(36, 24, 10));
+    graphics.setFont(juce::Font(30.0f, juce::Font::bold));
+    graphics.drawText("VALVETONE 50",
+                      headerBounds.getX() + 24,
+                      headerBounds.getY() + 12,
+                      headerBounds.getWidth() - 220,
+                      34,
+                      juce::Justification::centredLeft);
+
+    graphics.setFont(juce::Font(12.5f, juce::Font::plain));
+    graphics.drawText("Custom Guitar Amplifier",
+                      headerBounds.getX() + 28,
+                      headerBounds.getBottom() - 28,
+                      220,
+                      18,
+                      juce::Justification::centredLeft);
+}
+
+void MainComponent::drawAmpFooter(juce::Graphics& graphics, juce::Rectangle<int> area)
+{
+    graphics.setColour(juce::Colour::fromRGB(18, 18, 18));
+    graphics.fillRoundedRectangle(area.toFloat(), 14.0f);
+
+    for (int index = 0; index < 6; ++index)
+    {
+        const int x = area.getX() + 24 + index * 28;
+        graphics.setColour(juce::Colour::fromRGB(40, 40, 40));
+        graphics.fillEllipse(static_cast<float>(x), static_cast<float>(area.getCentreY() - 5), 10.0f, 10.0f);
+
+        graphics.setColour(juce::Colour::fromRGB(12, 12, 12));
+        graphics.drawEllipse(static_cast<float>(x), static_cast<float>(area.getCentreY() - 5), 10.0f, 10.0f, 1.0f);
+    }
+
+    graphics.setColour(juce::Colour::fromRGB(160, 150, 120));
+    graphics.setFont(juce::Font(12.0f, juce::Font::bold));
+    graphics.drawText("POWER - STANDBY - ANALOG RESPONSE",
+                      area.getX() + 210,
+                      area.getY(),
+                      area.getWidth() - 220,
+                      area.getHeight(),
+                      juce::Justification::centredLeft);
+}
+
 void MainComponent::drawLevelMeter(juce::Graphics& graphics, juce::Rectangle<int> meterArea) const
 {
-    graphics.setColour(juce::Colour::fromRGB(70, 64, 88));
-    graphics.fillRoundedRectangle(meterArea.toFloat(), 8.0f);
+    graphics.setColour(juce::Colour::fromRGB(18, 18, 18));
+    graphics.fillRoundedRectangle(meterArea.toFloat(), 10.0f);
+
+    auto innerMeterArea = meterArea.reduced(4);
+
+    juce::ColourGradient meterBackground(juce::Colour::fromRGB(18, 28, 18),
+                                         innerMeterArea.getBottomLeft().toFloat(),
+                                         juce::Colour::fromRGB(20, 20, 20),
+                                         innerMeterArea.getTopLeft().toFloat(),
+                                         false);
+    graphics.setGradientFill(meterBackground);
+    graphics.fillRoundedRectangle(innerMeterArea.toFloat(), 8.0f);
 
     const float normalizedLevel = juce::jlimit(0.0f, 1.0f, currentLevel);
-    const int filledHeight = static_cast<int>(meterArea.getHeight() * normalizedLevel);
+    const int filledHeight = static_cast<int>(innerMeterArea.getHeight() * normalizedLevel);
 
     juce::Rectangle<int> filledArea(
-        meterArea.getX(),
-        meterArea.getBottom() - filledHeight,
-        meterArea.getWidth(),
+        innerMeterArea.getX(),
+        innerMeterArea.getBottom() - filledHeight,
+        innerMeterArea.getWidth(),
         filledHeight
     );
 
-    graphics.setColour(juce::Colour::fromRGB(180, 120, 255));
-    graphics.fillRoundedRectangle(filledArea.toFloat(), 8.0f);
+    juce::ColourGradient levelGradient(juce::Colour::fromRGB(255, 70, 70),
+                                       filledArea.getTopLeft().toFloat(),
+                                       juce::Colour::fromRGB(90, 255, 120),
+                                       filledArea.getBottomLeft().toFloat(),
+                                       false);
+    graphics.setGradientFill(levelGradient);
+    graphics.fillRoundedRectangle(filledArea.toFloat(), 6.0f);
 
-    graphics.setColour(juce::Colours::white.withAlpha(0.9f));
-    graphics.drawRoundedRectangle(meterArea.toFloat(), 8.0f, 1.0f);
+    graphics.setColour(juce::Colour::fromRGB(95, 95, 95));
+    graphics.drawRoundedRectangle(meterArea.toFloat(), 10.0f, 1.2f);
+
+    graphics.setColour(juce::Colours::white.withAlpha(0.15f));
+    for (int index = 1; index < 10; ++index)
+    {
+        const float y = static_cast<float>(innerMeterArea.getY())
+                      + (static_cast<float>(innerMeterArea.getHeight()) / 10.0f) * static_cast<float>(index);
+
+        graphics.drawLine(static_cast<float>(innerMeterArea.getX() + 4),
+                          y,
+                          static_cast<float>(innerMeterArea.getRight() - 4),
+                          y,
+                          1.0f);
+    }
 }
 
 void MainComponent::paint(juce::Graphics& graphics)
 {
-    graphics.fillAll(juce::Colour::fromRGB(16, 16, 20));
+    graphics.fillAll(juce::Colour::fromRGB(12, 12, 12));
 
-    auto bounds = getLocalBounds().reduced(12);
-    auto headerArea = bounds.removeFromTop(70);
-    auto mainPanelArea = bounds.reduced(6);
-
-    juce::ignoreUnused(headerArea);
-
-    graphics.setColour(juce::Colour::fromRGB(40, 34, 52));
-    graphics.fillRoundedRectangle(mainPanelArea.toFloat(), 18.0f);
-
-    graphics.setColour(juce::Colours::white);
-    graphics.setFont(getWidth() < 760 ? 24.0f : 30.0f);
-    graphics.drawText("MySecondAmp",
-                      18,
-                      18,
-                      getWidth() - 220,
-                      40,
-                      juce::Justification::centredLeft);
-
+    drawAmpBackground(graphics, ampBodyBounds);
+    drawAmpHeader(graphics, headerBounds);
+    drawAmpFooter(graphics, footerBounds);
     drawLevelMeter(graphics, levelMeterBounds);
+
+    graphics.setColour(juce::Colour::fromRGB(50, 36, 16));
+    graphics.fillRoundedRectangle(juce::Rectangle<float>(static_cast<float>(ampBodyBounds.getX() + 18),
+                                                         static_cast<float>(ampBodyBounds.getBottom() - 22),
+                                                         static_cast<float>(ampBodyBounds.getWidth() - 36),
+                                                         8.0f),
+                                  4.0f);
+
+    graphics.setColour(juce::Colour::fromRGB(255, 245, 215).withAlpha(0.12f));
+    graphics.fillRoundedRectangle(headerBounds.toFloat().translated(0.0f, 2.0f).reduced(10.0f, 8.0f), 12.0f);
 }
 
-void MainComponent::layoutControlsSingleColumn(int contentWidth)
+void MainComponent::layoutAmpControls(juce::Rectangle<int> contentArea)
 {
-    constexpr int leftPadding = 16;
-    constexpr int topPadding = 16;
-    constexpr int sectionHeight = 24;
-    constexpr int labelHeight = 24;
-    constexpr int sliderHeight = 42;
-    constexpr int sectionGap = 14;
-    constexpr int controlGapAfterLabel = 26;
-    constexpr int controlGapAfterSlider = 54;
-    constexpr int meterHeight = 190;
-    constexpr int meterWidth = 18;
+    const int sectionLabelHeight = 26;
+    const int knobWidth = 106;
+    const int knobHeight = 126;
+    const int blockVerticalPadding = 8;
+    const int topMargin = 16;
+    const int bottomMargin = 12;
+    const int leftRightMargin = 20;
+    const int rowGap = 18;
+    const int columnGap = 18;
+    const int meterColumnWidth = 72;
 
-    const int usableWidth = juce::jmax(220, contentWidth - 32);
-    const int sliderWidth = usableWidth - 34;
+    auto workArea = contentArea.reduced(leftRightMargin, topMargin);
+    workArea.removeFromBottom(bottomMargin);
 
-    int currentY = topPadding;
+    auto firstRow = workArea.removeFromTop(170);
+    workArea.removeFromTop(rowGap);
+    auto secondRow = workArea.removeFromTop(170);
 
-    auto placeSection = [&](juce::Label& sectionLabel)
+    auto topMeterArea = firstRow.removeFromRight(meterColumnWidth);
+    firstRow.removeFromRight(10);
+
+    auto inputArea = firstRow.removeFromLeft(firstRow.getWidth() / 2);
+    auto ampArea = firstRow;
+
+    secondRow.removeFromLeft(60);
+    secondRow.removeFromRight(60);
+
+    auto eqArea = secondRow.removeFromLeft(secondRow.getWidth() / 2);
+    auto fxArea = secondRow;
+
+    auto placeGroup = [&](juce::Rectangle<int> groupArea,
+                          juce::Label& sectionLabel,
+                          std::initializer_list<std::pair<juce::Label*, juce::Slider*>> controls)
     {
-        sectionLabel.setBounds(leftPadding, currentY, usableWidth, sectionHeight);
-        currentY += sectionHeight + 8;
+        groupArea.reduce(4, blockVerticalPadding);
+
+        auto titleArea = groupArea.removeFromTop(sectionLabelHeight);
+        sectionLabel.setBounds(titleArea);
+
+        const int controlCount = static_cast<int>(controls.size());
+        if (controlCount <= 0)
+            return;
+
+        const int totalControlWidth = controlCount * knobWidth;
+        const int totalGapWidth = juce::jmax(0, controlCount - 1) * columnGap;
+        const int totalUsedWidth = totalControlWidth + totalGapWidth;
+
+        int currentX = groupArea.getX() + juce::jmax(0, (groupArea.getWidth() - totalUsedWidth) / 2);
+        const int labelY = groupArea.getY() + 2;
+        const int sliderY = labelY + 18;
+
+        for (const auto& controlPair : controls)
+        {
+            auto* currentLabel = controlPair.first;
+            auto* currentSlider = controlPair.second;
+
+            currentLabel->setBounds(currentX, labelY, knobWidth, 20);
+            currentSlider->setBounds(currentX, sliderY, knobWidth, knobHeight);
+
+            currentX += knobWidth + columnGap;
+        }
     };
 
-    auto placeControl = [&](juce::Label& label, juce::Slider& slider)
-    {
-        label.setBounds(leftPadding, currentY, sliderWidth, labelHeight);
-        currentY += controlGapAfterLabel;
+    placeGroup(inputArea, inputSectionLabel, {
+        { &gainLabel, &gainSlider },
+        { &gateLabel, &gateSlider }
+    });
 
-        slider.setBounds(leftPadding, currentY, sliderWidth, sliderHeight);
-        currentY += controlGapAfterSlider;
-    };
+    placeGroup(ampArea, ampSectionLabel, {
+        { &driveLabel, &driveSlider },
+        { &toneLabel, &toneSlider },
+        { &masterLabel, &masterSlider }
+    });
 
-    placeSection(inputSectionLabel);
-    placeControl(gainLabel, gainSlider);
-    placeControl(gateLabel, gateSlider);
+    placeGroup(eqArea, eqSectionLabel, {
+        { &bassLabel, &bassSlider },
+        { &midLabel, &midSlider },
+        { &trebleLabel, &trebleSlider }
+    });
 
-    currentY += sectionGap;
-    placeSection(ampSectionLabel);
-    placeControl(driveLabel, driveSlider);
-    placeControl(toneLabel, toneSlider);
-    placeControl(masterLabel, masterSlider);
+    placeGroup(fxArea, fxSectionLabel, {
+        { &reverbLabel, &reverbSlider },
+        { &delayTimeLabel, &delayTimeSlider },
+        { &delayMixLabel, &delayMixSlider }
+    });
 
-    currentY += sectionGap;
-    placeSection(eqSectionLabel);
-    placeControl(bassLabel, bassSlider);
-    placeControl(midLabel, midSlider);
-    placeControl(trebleLabel, trebleSlider);
+    meterLabel.setBounds(topMeterArea.getX(), topMeterArea.getY() + 8, topMeterArea.getWidth(), 22);
+    levelMeterBounds = juce::Rectangle<int>(topMeterArea.getX() + 18,
+                                            topMeterArea.getY() + 36,
+                                            36,
+                                            118);
 
-    currentY += sectionGap;
-    placeSection(fxSectionLabel);
-    placeControl(reverbLabel, reverbSlider);
-    placeControl(delayTimeLabel, delayTimeSlider);
-    placeControl(delayMixLabel, delayMixSlider);
-
-    meterLabel.setBounds(leftPadding, currentY, sliderWidth, 28);
-    currentY += 36;
-
-    levelMeterBounds = juce::Rectangle<int>(leftPadding, currentY, meterWidth, meterHeight);
-    currentY += meterHeight + 20;
-
-    controlsContentHeight = juce::jmax(currentY, controlsViewport.getHeight() + 20);
-    controlsContent.setSize(contentWidth, controlsContentHeight);
+    controlsContent.setSize(contentArea.getWidth(), contentArea.getHeight());
 }
 
 void MainComponent::resized()
 {
-    auto bounds = getLocalBounds().reduced(12);
-    auto headerArea = bounds.removeFromTop(70);
-    auto contentArea = bounds.reduced(6);
+    auto bounds = getLocalBounds().reduced(18);
 
-    const int buttonWidth = getWidth() < 700 ? 130 : 150;
-    const int buttonHeight = 34;
+    ampBodyBounds = bounds;
 
-    audioSettingsButton.setBounds(
-        headerArea.getRight() - buttonWidth,
-        headerArea.getY() + 10,
-        buttonWidth,
-        buttonHeight
-    );
+    auto innerBounds = ampBodyBounds.reduced(20, 18);
+    headerBounds = innerBounds.removeFromTop(86);
 
-    controlsViewport.setBounds(contentArea);
+    footerBounds = juce::Rectangle<int>(ampBodyBounds.getX() + 22,
+                                        ampBodyBounds.getBottom() - 56,
+                                        ampBodyBounds.getWidth() - 44,
+                                        32);
 
-    auto viewportBounds = controlsViewport.getLocalBounds().reduced(18);
-    const int contentWidth = juce::jmax(260, viewportBounds.getWidth() - 12);
+    audioSettingsButton.setBounds(headerBounds.getRight() - 170,
+                                  headerBounds.getY() + 12,
+                                  150,
+                                  32);
 
-    layoutControlsSingleColumn(contentWidth);
+    auto controlsArea = ampBodyBounds.reduced(26, 118);
+    controlsArea.removeFromBottom(72);
+
+    controlsViewport.setBounds(controlsArea);
+    controlsContent.setBounds(controlsViewport.getLocalBounds());
+
+    layoutAmpControls(controlsViewport.getLocalBounds());
 }
 
 void MainComponent::sliderValueChanged(juce::Slider* changedSlider)
@@ -477,9 +771,6 @@ void MainComponent::sliderValueChanged(juce::Slider* changedSlider)
 
 void MainComponent::timerCallback()
 {
-    meterLabel.setText("Input Level: " + juce::String(currentLevel, 2),
-                       juce::dontSendNotification);
-
     repaint(levelMeterBounds.expanded(6));
 }
 
