@@ -14,3 +14,6 @@ JuceLibraryCode/
 # OS
 .DS_Store
 Thumbs.db
+
+# NAM dependencies
+Source/NAM/
