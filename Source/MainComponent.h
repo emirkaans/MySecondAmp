@@ -39,7 +39,6 @@ private:
 
     void layoutControlsSingleColumn(int contentWidth);
     void drawLevelMeter(juce::Graphics& graphics, juce::Rectangle<int> meterArea) const;
-
     void openAudioSettingsWindow();
 
     juce::Viewport controlsViewport;
@@ -94,7 +93,8 @@ private:
     float midValue = 0.0f;
     float trebleValue = 0.0f;
     float masterValue = 0.85f;
-    float gateValue = 0.025f;
+
+    float gateThresholdDb = -55.0f;
     float reverbValue = 0.12f;
     float delayTimeMs = 320.0f;
     float delayMixValue = 0.18f;

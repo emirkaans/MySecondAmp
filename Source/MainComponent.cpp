@@ -35,6 +35,11 @@ namespace
     private:
         juce::AudioDeviceSelectorComponent audioSetupComponent;
     };
+
+    float clamp01(float value)
+    {
+        return juce::jlimit(0.0f, 1.0f, value);
+    }
 }
 
 MainComponent::MainComponent()
@@ -61,11 +66,13 @@ MainComponent::MainComponent()
     setupSlider(trebleSlider, trebleLabel, "Treble", -18.0, 18.0, 0.1, 0.0);
 
     setupSlider(masterSlider, masterLabel, "Master", 0.0, 1.2, 0.01, 0.85);
-    setupSlider(gateSlider, gateLabel, "Noise Gate", 0.0, 0.12, 0.001, 0.025);
+    setupSlider(gateSlider, gateLabel, "Noise Gate Threshold (dB)", -80.0, -20.0, 1.0, -55.0);
 
     setupSlider(reverbSlider, reverbLabel, "Reverb", 0.0, 1.0, 0.01, 0.12);
     setupSlider(delayTimeSlider, delayTimeLabel, "Delay Time (ms)", 50.0, 900.0, 1.0, 320.0);
     setupSlider(delayMixSlider, delayMixLabel, "Delay Mix", 0.0, 0.65, 0.01, 0.18);
+
+    gateSlider.setTextValueSuffix(" dB");
 
     setupSectionLabel(inputSectionLabel, controlsContent, "INPUT");
     setupSectionLabel(ampSectionLabel, controlsContent, "AMP");
@@ -107,7 +114,7 @@ void MainComponent::setupSlider(juce::Slider& slider,
 
     slider.setRange(minValue, maxValue, interval);
     slider.setValue(startValue);
-    slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 72, 24);
+    slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 90, 24);
     slider.addListener(this);
     controlsContent.addAndMakeVisible(slider);
 }
@@ -194,17 +201,42 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
 
         const float rectifiedSample = std::abs(inputSample);
 
-        const float envelopeAttack = 0.20f;
-        const float envelopeRelease = 0.005f;
+        const float envelopeAttack = 0.08f;
+        const float envelopeRelease = 0.0025f;
 
         if (rectifiedSample > gateEnvelope)
             gateEnvelope += envelopeAttack * (rectifiedSample - gateEnvelope);
         else
             gateEnvelope += envelopeRelease * (rectifiedSample - gateEnvelope);
 
-        const float targetGateGain = (gateEnvelope > gateValue) ? 1.0f : 0.0f;
-        const float gateSmoothing = 0.02f;
-        gateGain += gateSmoothing * (targetGateGain - gateGain);
+        const float safeEnvelope = juce::jmax(gateEnvelope, 1.0e-6f);
+        const float envelopeDb = juce::Decibels::gainToDecibels(safeEnvelope, -120.0f);
+
+        const float fullCloseDb = gateThresholdDb - 12.0f;
+        const float fullOpenDb = gateThresholdDb + 6.0f;
+
+        float targetGateGain = 1.0f;
+
+        if (envelopeDb <= fullCloseDb)
+        {
+            targetGateGain = 0.0f;
+        }
+        else if (envelopeDb < fullOpenDb)
+        {
+            const float normalizedOpenAmount =
+                (envelopeDb - fullCloseDb) / (fullOpenDb - fullCloseDb);
+
+            const float curvedOpenAmount = normalizedOpenAmount * normalizedOpenAmount;
+            targetGateGain = clamp01(curvedOpenAmount);
+        }
+
+        const float gateOpenSmoothing = 0.06f;
+        const float gateCloseSmoothing = 0.008f;
+
+        if (targetGateGain > gateGain)
+            gateGain += gateOpenSmoothing * (targetGateGain - gateGain);
+        else
+            gateGain += gateCloseSmoothing * (targetGateGain - gateGain);
 
         inputSample *= gateGain;
 
@@ -284,26 +316,19 @@ void MainComponent::paint(juce::Graphics& graphics)
     auto headerArea = bounds.removeFromTop(70);
     auto mainPanelArea = bounds.reduced(6);
 
-    const bool isCompactHeader = getWidth() < 760;
+    juce::ignoreUnused(headerArea);
 
     graphics.setColour(juce::Colour::fromRGB(40, 34, 52));
     graphics.fillRoundedRectangle(mainPanelArea.toFloat(), 18.0f);
 
-    auto titleArea = headerArea.removeFromLeft(isCompactHeader ? headerArea.getWidth() : headerArea.getWidth() / 2);
-    auto subtitleArea = headerArea;
-
     graphics.setColour(juce::Colours::white);
-    graphics.setFont(isCompactHeader ? 24.0f : 30.0f);
-    graphics.drawText("MySecondAmp", titleArea, juce::Justification::centredLeft);
-
-    if (!isCompactHeader)
-    {
-        graphics.setColour(juce::Colour::fromRGB(210, 190, 255));
-        graphics.setFont(15.0f);
-        graphics.drawText("Mor ve Otesi modu: Drive + Delay + Reverb",
-                          subtitleArea,
-                          juce::Justification::centredRight);
-    }
+    graphics.setFont(getWidth() < 760 ? 24.0f : 30.0f);
+    graphics.drawText("MySecondAmp",
+                      18,
+                      18,
+                      getWidth() - 220,
+                      40,
+                      juce::Justification::centredLeft);
 
     drawLevelMeter(graphics, levelMeterBounds);
 }
@@ -433,7 +458,7 @@ void MainComponent::sliderValueChanged(juce::Slider* changedSlider)
     }
     else if (changedSlider == &gateSlider)
     {
-        gateValue = static_cast<float>(gateSlider.getValue());
+        gateThresholdDb = static_cast<float>(gateSlider.getValue());
     }
     else if (changedSlider == &reverbSlider)
     {
