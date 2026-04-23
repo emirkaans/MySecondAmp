@@ -1,15 +1,27 @@
 #include "MainComponent.h"
 
+namespace
+{
+    void setupSectionLabel(juce::Label& label, juce::Component& parent, const juce::String& text)
+    {
+        label.setText(text, juce::dontSendNotification);
+        label.setColour(juce::Label::textColourId, juce::Colour::fromRGB(225, 215, 255));
+        label.setFont(juce::Font(16.0f, juce::Font::bold));
+        label.setJustificationType(juce::Justification::centredLeft);
+        parent.addAndMakeVisible(label);
+    }
+}
+
 MainComponent::MainComponent()
     : audioSetupComponent(deviceManager,
-        0, 2,
-        0, 2,
-        true,
-        false,
-        true,
-        false)
+                          0, 2,
+                          0, 2,
+                          true,
+                          false,
+                          true,
+                          false)
 {
-    setSize(1360, 820);
+    setSize(1180, 760);
     setAudioChannels(2, 2);
 
     addAndMakeVisible(audioSetupComponent);
@@ -33,6 +45,11 @@ MainComponent::MainComponent()
     setupSlider(delayTimeSlider, delayTimeLabel, "Delay Time (ms)", 50.0, 900.0, 1.0, 320.0);
     setupSlider(delayMixSlider, delayMixLabel, "Delay Mix", 0.0, 0.65, 0.01, 0.18);
 
+    setupSectionLabel(inputSectionLabel, controlsContent, "INPUT");
+    setupSectionLabel(ampSectionLabel, controlsContent, "AMP");
+    setupSectionLabel(eqSectionLabel, controlsContent, "EQ");
+    setupSectionLabel(fxSectionLabel, controlsContent, "FX");
+
     meterLabel.setText("Input Level: 0.00", juce::dontSendNotification);
     meterLabel.setColour(juce::Label::textColourId, juce::Colours::white);
     meterLabel.setJustificationType(juce::Justification::centredLeft);
@@ -51,12 +68,12 @@ MainComponent::~MainComponent()
 }
 
 void MainComponent::setupSlider(juce::Slider& slider,
-    juce::Label& label,
-    const juce::String& text,
-    double minValue,
-    double maxValue,
-    double interval,
-    double startValue)
+                                juce::Label& label,
+                                const juce::String& text,
+                                double minValue,
+                                double maxValue,
+                                double interval,
+                                double startValue)
 {
     label.setText(text, juce::dontSendNotification);
     label.setColour(juce::Label::textColourId, juce::Colours::white);
@@ -132,7 +149,6 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
     {
         float inputSample = leftChannelData[sampleIndex];
 
-        // Smooth noise gate
         const float rectifiedSample = std::abs(inputSample);
 
         const float envelopeAttack = 0.20f;
@@ -162,7 +178,7 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
 
         const float delayedLeftSample = delayLeftData[readPosition];
         const float monoOutputSample = (inputSample * (1.0f - delayMixValue))
-            + (delayedLeftSample * delayMixValue);
+                                     + (delayedLeftSample * delayMixValue);
 
         delayLeftData[delayWritePosition] = inputSample + (delayedLeftSample * currentDelayFeedback);
         delayRightData[delayWritePosition] = delayLeftData[delayWritePosition];
@@ -195,155 +211,225 @@ void MainComponent::releaseResources()
 {
 }
 
-void MainComponent::paint(juce::Graphics& g)
+void MainComponent::drawLevelMeter(juce::Graphics& graphics, juce::Rectangle<int> meterArea) const
 {
-    g.fillAll(juce::Colour::fromRGB(16, 16, 20));
+    graphics.setColour(juce::Colour::fromRGB(70, 64, 88));
+    graphics.fillRoundedRectangle(meterArea.toFloat(), 8.0f);
 
-    auto bounds = getLocalBounds().reduced(12);
-    auto headerArea = bounds.removeFromTop(56);
-    auto leftArea = bounds.removeFromLeft(760);
-    auto rightArea = bounds.reduced(12, 0);
+    const float normalizedLevel = juce::jlimit(0.0f, 1.0f, currentLevel);
+    const int filledHeight = static_cast<int>(meterArea.getHeight() * normalizedLevel);
 
-    g.setColour(juce::Colour::fromRGB(30, 30, 36));
-    g.fillRoundedRectangle(leftArea.toFloat(), 18.0f);
+    juce::Rectangle<int> filledArea(
+        meterArea.getX(),
+        meterArea.getBottom() - filledHeight,
+        meterArea.getWidth(),
+        filledHeight
+    );
 
-    g.setColour(juce::Colour::fromRGB(40, 34, 52));
-    g.fillRoundedRectangle(rightArea.toFloat(), 18.0f);
+    graphics.setColour(juce::Colour::fromRGB(180, 120, 255));
+    graphics.fillRoundedRectangle(filledArea.toFloat(), 8.0f);
 
-    g.setColour(juce::Colours::white);
-    g.setFont(30.0f);
-    g.drawText("MySecondAmp",
-        headerArea.removeFromLeft(340),
-        juce::Justification::centredLeft);
-
-    g.setColour(juce::Colour::fromRGB(210, 190, 255));
-    g.setFont(15.0f);
-    g.drawText("Mor ve Otesi modu: Drive + Delay + Reverb",
-        headerArea,
-        juce::Justification::centredRight);
-
-    auto viewportBounds = controlsViewport.getBounds().reduced(18, 18);
-
-    const int meterX = viewportBounds.getRight() - 44;
-    const int meterY = viewportBounds.getY() + 460;
-    const int meterWidth = 18;
-    const int meterHeight = 220;
-
-    g.setColour(juce::Colour::fromRGB(70, 64, 88));
-    g.fillRoundedRectangle(static_cast<float>(meterX), static_cast<float>(meterY),
-        static_cast<float>(meterWidth), static_cast<float>(meterHeight), 8.0f);
-
-    const int filledHeight = static_cast<int>(meterHeight * juce::jlimit(0.0f, 1.0f, currentLevel));
-    const int filledY = meterY + (meterHeight - filledHeight);
-
-    g.setColour(juce::Colour::fromRGB(180, 120, 255));
-    g.fillRoundedRectangle(static_cast<float>(meterX), static_cast<float>(filledY),
-        static_cast<float>(meterWidth), static_cast<float>(filledHeight), 8.0f);
-
-    g.setColour(juce::Colours::white.withAlpha(0.9f));
-    g.drawRoundedRectangle(static_cast<float>(meterX), static_cast<float>(meterY),
-        static_cast<float>(meterWidth), static_cast<float>(meterHeight), 8.0f, 1.0f);
+    graphics.setColour(juce::Colours::white.withAlpha(0.9f));
+    graphics.drawRoundedRectangle(meterArea.toFloat(), 8.0f, 1.0f);
 }
 
-void MainComponent::resized()
+void MainComponent::paint(juce::Graphics& graphics)
 {
-    auto bounds = getLocalBounds().reduced(24);
-    bounds.removeFromTop(64);
+    graphics.fillAll(juce::Colour::fromRGB(16, 16, 20));
 
-    auto leftPanel = bounds.removeFromLeft(760);
-    auto rightPanel = bounds.reduced(12, 0);
+    auto bounds = getLocalBounds().reduced(12);
+    auto headerArea = bounds.removeFromTop(64);
 
-    audioSetupComponent.setBounds(leftPanel.reduced(12));
-    controlsViewport.setBounds(rightPanel);
+    const bool isCompactHeader = getWidth() < 760;
 
-    auto contentArea = rightPanel.reduced(24);
-    const int contentWidth = contentArea.getWidth() - 14;
+    auto contentArea = bounds;
+    auto deviceArea = contentArea;
+    auto controlsArea = contentArea;
 
-    int currentY = 12;
+    if (getWidth() < 920)
+    {
+        deviceArea = contentArea.removeFromTop(juce::jmax(220, contentArea.getHeight() / 3));
+        controlsArea = contentArea;
+    }
+    else
+    {
+        const int leftPanelWidth = juce::jlimit(300, 520, contentArea.getWidth() * 38 / 100);
+        deviceArea = contentArea.removeFromLeft(leftPanelWidth);
+        controlsArea = contentArea;
+    }
 
-    auto placeControl = [&contentWidth, &currentY](juce::Label& label, juce::Slider& slider)
-        {
-            label.setBounds(12, currentY, contentWidth - 24, 24);
-            currentY += 26;
+    deviceArea = deviceArea.reduced(6);
+    controlsArea = controlsArea.reduced(6);
 
-            slider.setBounds(12, currentY, contentWidth - 24, 42);
-            currentY += 56;
-        };
+    graphics.setColour(juce::Colour::fromRGB(30, 30, 36));
+    graphics.fillRoundedRectangle(deviceArea.toFloat(), 18.0f);
 
+    graphics.setColour(juce::Colour::fromRGB(40, 34, 52));
+    graphics.fillRoundedRectangle(controlsArea.toFloat(), 18.0f);
+
+    auto titleArea = headerArea.removeFromLeft(isCompactHeader ? headerArea.getWidth() : headerArea.getWidth() / 2);
+    auto subtitleArea = headerArea;
+
+    graphics.setColour(juce::Colours::white);
+    graphics.setFont(isCompactHeader ? 24.0f : 30.0f);
+    graphics.drawText("MySecondAmp", titleArea, juce::Justification::centredLeft);
+
+    if (!isCompactHeader)
+    {
+        graphics.setColour(juce::Colour::fromRGB(210, 190, 255));
+        graphics.setFont(15.0f);
+        graphics.drawText("Mor ve Otesi modu: Drive + Delay + Reverb",
+                          subtitleArea,
+                          juce::Justification::centredRight);
+    }
+
+    drawLevelMeter(graphics, levelMeterBounds);
+}
+
+void MainComponent::layoutControlsSingleColumn(int contentWidth)
+{
+    constexpr int leftPadding = 16;
+    constexpr int topPadding = 16;
+    constexpr int sectionHeight = 24;
+    constexpr int labelHeight = 24;
+    constexpr int sliderHeight = 42;
+    constexpr int sectionGap = 14;
+    constexpr int controlGapAfterLabel = 26;
+    constexpr int controlGapAfterSlider = 54;
+    constexpr int meterHeight = 190;
+    constexpr int meterWidth = 18;
+
+    const int usableWidth = juce::jmax(220, contentWidth - 32);
+    const int sliderWidth = usableWidth - 34;
+
+    int currentY = topPadding;
+
+    auto placeSection = [&](juce::Label& sectionLabel)
+    {
+        sectionLabel.setBounds(leftPadding, currentY, usableWidth, sectionHeight);
+        currentY += sectionHeight + 8;
+    };
+
+    auto placeControl = [&](juce::Label& label, juce::Slider& slider)
+    {
+        label.setBounds(leftPadding, currentY, sliderWidth, labelHeight);
+        currentY += controlGapAfterLabel;
+
+        slider.setBounds(leftPadding, currentY, sliderWidth, sliderHeight);
+        currentY += controlGapAfterSlider;
+    };
+
+    placeSection(inputSectionLabel);
     placeControl(gainLabel, gainSlider);
-    placeControl(toneLabel, toneSlider);
+    placeControl(gateLabel, gateSlider);
+
+    currentY += sectionGap;
+    placeSection(ampSectionLabel);
     placeControl(driveLabel, driveSlider);
+    placeControl(toneLabel, toneSlider);
+    placeControl(masterLabel, masterSlider);
 
-    currentY += 4;
-
+    currentY += sectionGap;
+    placeSection(eqSectionLabel);
     placeControl(bassLabel, bassSlider);
     placeControl(midLabel, midSlider);
     placeControl(trebleLabel, trebleSlider);
 
-    currentY += 4;
-
-    placeControl(masterLabel, masterSlider);
-    placeControl(gateLabel, gateSlider);
+    currentY += sectionGap;
+    placeSection(fxSectionLabel);
     placeControl(reverbLabel, reverbSlider);
     placeControl(delayTimeLabel, delayTimeSlider);
     placeControl(delayMixLabel, delayMixSlider);
 
-    currentY += 4;
-    meterLabel.setBounds(12, currentY, contentWidth - 24, 28);
-    currentY += 40;
+    meterLabel.setBounds(leftPadding, currentY, sliderWidth, 28);
+    currentY += 36;
 
-    controlsContentHeight = juce::jmax(currentY + 20, controlsViewport.getHeight() + 40);
+    levelMeterBounds = juce::Rectangle<int>(leftPadding, currentY, meterWidth, meterHeight);
+    currentY += meterHeight + 20;
+
+    controlsContentHeight = juce::jmax(currentY, controlsViewport.getHeight() + 20);
     controlsContent.setSize(contentWidth, controlsContentHeight);
 }
 
-void MainComponent::sliderValueChanged(juce::Slider* slider)
+void MainComponent::resized()
 {
-    if (slider == &gainSlider)
+    auto bounds = getLocalBounds().reduced(12);
+    auto headerArea = bounds.removeFromTop(64);
+
+    juce::ignoreUnused(headerArea);
+
+    if (getWidth() < 920)
+    {
+        auto deviceArea = bounds.removeFromTop(juce::jmax(220, bounds.getHeight() / 3)).reduced(6);
+        auto controlsArea = bounds.reduced(6);
+
+        audioSetupComponent.setBounds(deviceArea.reduced(12));
+        controlsViewport.setBounds(controlsArea);
+    }
+    else
+    {
+        const int leftPanelWidth = juce::jlimit(300, 520, bounds.getWidth() * 38 / 100);
+        auto deviceArea = bounds.removeFromLeft(leftPanelWidth).reduced(6);
+        auto controlsArea = bounds.reduced(6);
+
+        audioSetupComponent.setBounds(deviceArea.reduced(12));
+        controlsViewport.setBounds(controlsArea);
+    }
+
+    auto viewportBounds = controlsViewport.getLocalBounds().reduced(18);
+    const int contentWidth = juce::jmax(260, viewportBounds.getWidth() - 12);
+
+    layoutControlsSingleColumn(contentWidth);
+}
+
+void MainComponent::sliderValueChanged(juce::Slider* changedSlider)
+{
+    if (changedSlider == &gainSlider)
     {
         inputGain = static_cast<float>(gainSlider.getValue());
     }
-    else if (slider == &toneSlider)
+    else if (changedSlider == &toneSlider)
     {
         toneValue = static_cast<float>(toneSlider.getValue());
         updateToneCoefficient();
     }
-    else if (slider == &driveSlider)
+    else if (changedSlider == &driveSlider)
     {
         driveValue = static_cast<float>(driveSlider.getValue());
     }
-    else if (slider == &bassSlider)
+    else if (changedSlider == &bassSlider)
     {
         bassValue = static_cast<float>(bassSlider.getValue());
         updateEqFilters();
     }
-    else if (slider == &midSlider)
+    else if (changedSlider == &midSlider)
     {
         midValue = static_cast<float>(midSlider.getValue());
         updateEqFilters();
     }
-    else if (slider == &trebleSlider)
+    else if (changedSlider == &trebleSlider)
     {
         trebleValue = static_cast<float>(trebleSlider.getValue());
         updateEqFilters();
     }
-    else if (slider == &masterSlider)
+    else if (changedSlider == &masterSlider)
     {
         masterValue = static_cast<float>(masterSlider.getValue());
     }
-    else if (slider == &gateSlider)
+    else if (changedSlider == &gateSlider)
     {
         gateValue = static_cast<float>(gateSlider.getValue());
     }
-    else if (slider == &reverbSlider)
+    else if (changedSlider == &reverbSlider)
     {
         reverbValue = static_cast<float>(reverbSlider.getValue());
         updateReverbParameters();
     }
-    else if (slider == &delayTimeSlider)
+    else if (changedSlider == &delayTimeSlider)
     {
         delayTimeMs = static_cast<float>(delayTimeSlider.getValue());
     }
-    else if (slider == &delayMixSlider)
+    else if (changedSlider == &delayMixSlider)
     {
         delayMixValue = static_cast<float>(delayMixSlider.getValue());
     }
@@ -352,30 +438,24 @@ void MainComponent::sliderValueChanged(juce::Slider* slider)
 void MainComponent::timerCallback()
 {
     meterLabel.setText("Input Level: " + juce::String(currentLevel, 2),
-        juce::dontSendNotification);
+                       juce::dontSendNotification);
 
-    repaint();
+    repaint(levelMeterBounds.expanded(6));
 }
 
 float MainComponent::processDriveSample(float inputSample) const
 {
-    // Tight metal-style pre-emphasis:
-    // lows biraz sıkılaşsın, pick attack öne gelsin
     const float tightInput = inputSample * (1.0f + driveValue * 6.0f);
 
-    // Stage 1: soft saturation
     const float stageOne = std::tanh(tightInput * (1.8f + driveValue * 4.0f));
 
-    // Stage 2: more aggressive clipping
     const float stageTwoInput = stageOne * (1.5f + driveValue * 6.0f);
     const float stageTwo = std::tanh(stageTwoInput);
 
-    // Blend dry çok az kalsın, ama tamamen de yok olmasın
     const float dryBlend = 0.10f;
     const float wetBlend = 1.0f - dryBlend;
     const float mixedSample = (inputSample * dryBlend) + (stageTwo * wetBlend);
 
-    // Output trim
     const float outputTrim = 0.55f - (driveValue * 0.12f);
 
     return mixedSample * outputTrim;
@@ -395,7 +475,7 @@ void MainComponent::updateToneCoefficient()
     const float cutoffFrequency = minimumCutoff + (toneValue * (maximumCutoff - minimumCutoff));
 
     const float x = std::exp(-2.0f * juce::MathConstants<float>::pi
-        * cutoffFrequency / static_cast<float>(currentSampleRate));
+                             * cutoffFrequency / static_cast<float>(currentSampleRate));
     toneCoefficient = 1.0f - x;
 }
 

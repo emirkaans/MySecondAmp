@@ -4,8 +4,8 @@
 #include <cmath>
 
 class MainComponent : public juce::AudioAppComponent,
-    public juce::Slider::Listener,
-    public juce::Timer
+                      public juce::Slider::Listener,
+                      public juce::Timer
 {
 public:
     MainComponent();
@@ -15,20 +15,20 @@ public:
     void getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferToFill) override;
     void releaseResources() override;
 
-    void paint(juce::Graphics& g) override;
+    void paint(juce::Graphics& graphics) override;
     void resized() override;
 
-    void sliderValueChanged(juce::Slider* slider) override;
+    void sliderValueChanged(juce::Slider* changedSlider) override;
     void timerCallback() override;
 
 private:
     void setupSlider(juce::Slider& slider,
-        juce::Label& label,
-        const juce::String& text,
-        double minValue,
-        double maxValue,
-        double interval,
-        double startValue);
+                     juce::Label& label,
+                     const juce::String& text,
+                     double minValue,
+                     double maxValue,
+                     double interval,
+                     double startValue);
 
     void updateToneCoefficient();
     void updateEqFilters();
@@ -36,6 +36,9 @@ private:
 
     float processDriveSample(float inputSample) const;
     float processToneSample(float inputSample, int channel);
+
+    void layoutControlsSingleColumn(int contentWidth);
+    void drawLevelMeter(juce::Graphics& graphics, juce::Rectangle<int> meterArea) const;
 
     juce::AudioDeviceSelectorComponent audioSetupComponent;
     juce::Viewport controlsViewport;
@@ -76,6 +79,11 @@ private:
 
     juce::Label meterLabel;
 
+    juce::Label inputSectionLabel;
+    juce::Label ampSectionLabel;
+    juce::Label eqSectionLabel;
+    juce::Label fxSectionLabel;
+
     float inputGain = 1.0f;
     float toneValue = 0.55f;
     float driveValue = 0.22f;
@@ -115,6 +123,7 @@ private:
     float delayFeedback = 0.32f;
 
     int controlsContentHeight = 0;
+    juce::Rectangle<int> levelMeterBounds;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };
