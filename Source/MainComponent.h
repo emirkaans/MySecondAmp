@@ -3,6 +3,11 @@
 #include <JuceHeader.h>
 #include <cmath>
 #include <memory>
+#include <vector>
+#include <mutex>
+
+// NAM forward declaration - actual include in .cpp to keep compile times fast
+namespace nam { class DSP; }
 
 class AmpLookAndFeel final : public juce::LookAndFeel_V4
 {
@@ -60,6 +65,7 @@ private:
     float processToneSample   (float inputSample, int channel);
     void  processDelayBlock   (float* leftData, float* rightData, int numSamples);
     void  processCabBlock     (float* leftData, float* rightData, int numSamples);
+    void  processNamBlock     (float* leftData, float* rightData, int numSamples);
 
     void layoutAmpControls (juce::Rectangle<int> contentArea);
     void drawLevelMeter    (juce::Graphics& g, juce::Rectangle<int> meterArea) const;
@@ -71,8 +77,11 @@ private:
     void savePreset();
     void loadPreset();
     void loadIrFile();
+    void loadNamFile();
     void applyPreset(const juce::XmlElement& xml);
 
+    // =========================================================================
+    // Components
     // =========================================================================
     std::unique_ptr<AmpLookAndFeel> ampLookAndFeel;
 
@@ -83,6 +92,7 @@ private:
     juce::TextButton savePresetButton    { "Save Preset"    };
     juce::TextButton loadPresetButton    { "Load Preset"    };
     juce::TextButton loadIrButton        { "Load IR"        };
+    juce::TextButton loadNamButton       { "Load NAM"       };
 
     juce::Slider gainSlider;     juce::Label gainLabel;
     juce::Slider gateSlider;     juce::Label gateLabel;
@@ -97,12 +107,16 @@ private:
     juce::Slider delayTimeSlider; juce::Label delayTimeLabel;
     juce::Slider delayMixSlider;  juce::Label delayMixLabel;
 
+    // Bypass buttons
     juce::TextButton eqBypassButton     { "EQ"  };
     juce::TextButton reverbBypassButton { "REV" };
     juce::TextButton delayBypassButton  { "DLY" };
     juce::TextButton cabBypassButton    { "CAB" };
+    juce::TextButton namBypassButton    { "NAM" };
 
+    // Status labels
     juce::Label irStatusLabel;
+    juce::Label namStatusLabel;
     juce::Label meterLabel;
     juce::Label clipLabel;
     juce::Label inputSectionLabel;
@@ -111,6 +125,8 @@ private:
     juce::Label fxSectionLabel;
     juce::Label bypassSectionLabel;
 
+    // =========================================================================
+    // DSP parameters
     // =========================================================================
     float inputGain       = 1.0f;
     float toneValue       = 0.55f;
@@ -129,42 +145,70 @@ private:
     bool reverbBypassed = false;
     bool delayBypassed  = false;
     bool cabBypassed    = false;
+    bool namBypassed    = false;
 
     float currentLevel  = 0.0f;
     bool  clipping      = false;
     int   clipHoldTimer = 0;
 
-    double currentSampleRate = 44100.0;
+    double currentSampleRate    = 44100.0;
+    int    currentBlockSize     = 512;
 
+    // Tone
     float toneCoefficient = 0.15f;
     float toneStateLeft   = 0.0f;
     float toneStateRight  = 0.0f;
 
+    // Gate
     float gateEnvelope = 0.0f;
     float gateGain     = 1.0f;
 
-    juce::IIRFilter preHpFilterLeft,      preHpFilterRight;
-    juce::IIRFilter bassFilterLeft,       bassFilterRight;
-    juce::IIRFilter midFilterLeft,        midFilterRight;
-    juce::IIRFilter trebleFilterLeft,     trebleFilterRight;
-    juce::IIRFilter presenceFilterLeft,   presenceFilterRight;
-    juce::IIRFilter cabLoFilterLeft,      cabLoFilterRight;
-    juce::IIRFilter cabHiFilterLeft,      cabHiFilterRight;
-    juce::IIRFilter cabMidFilterLeft,     cabMidFilterRight;
+    // Filters
+    juce::IIRFilter preHpFilterLeft,    preHpFilterRight;
+    juce::IIRFilter bassFilterLeft,     bassFilterRight;
+    juce::IIRFilter midFilterLeft,      midFilterRight;
+    juce::IIRFilter trebleFilterLeft,   trebleFilterRight;
+    juce::IIRFilter presenceFilterLeft, presenceFilterRight;
+    juce::IIRFilter cabLoFilterLeft,    cabLoFilterRight;
+    juce::IIRFilter cabHiFilterLeft,    cabHiFilterRight;
+    juce::IIRFilter cabMidFilterLeft,   cabMidFilterRight;
 
+    // IR convolution
     juce::dsp::ProcessSpec   dspSpec;
     juce::dsp::Convolution   convolution;
     juce::AudioBuffer<float> irWorkBuffer;
     bool irLoaded = false;
 
+    // Reverb
     juce::Reverb             reverbProcessor;
     juce::Reverb::Parameters reverbParameters;
 
+    // Delay
     juce::AudioBuffer<float> delayBuffer;
     int delayWritePosition = 0;
 
+    // =========================================================================
+    // NAM model
+    // =========================================================================
+    // namModel is only accessed from the audio thread.
+    // namModelPending is written from the message thread and swapped in
+    // at the start of getNextAudioBlock under namSwapMutex.
+    std::unique_ptr<nam::DSP> namModel;
+    std::unique_ptr<nam::DSP> namModelPending;
+    std::mutex                namSwapMutex;
+    bool                      namLoaded = false;
+
+    // Per-block scratch buffers for NAM (double precision input/output)
+    std::vector<double>  namInputBuf;
+    std::vector<double>  namOutputBuf;
+    // Double-pointer arrays required by nam::DSP::process()
+    double*              namInputPtr  = nullptr;
+    double*              namOutputPtr = nullptr;
+
+    // File chooser
     std::unique_ptr<juce::FileChooser> fileChooser;
 
+    // Layout bounds
     juce::Rectangle<int> levelMeterBounds;
     juce::Rectangle<int> ampBodyBounds;
     juce::Rectangle<int> headerBounds;

@@ -1,5 +1,9 @@
 #include "MainComponent.h"
 
+// NAM includes - must come after JuceHeader to avoid macro conflicts
+#include "NAM/get_dsp.h"
+#include "NAM/dsp.h"
+
 namespace
 {
     void setupSectionLabel(juce::Label& label, juce::Component& parent, const juce::String& text)
@@ -41,7 +45,7 @@ namespace
         slider.setColour(juce::Slider::textBoxOutlineColourId,    juce::Colour::fromRGB(110, 100, 80));
     }
 
-    // Asymmetric soft-clip: positive half harder than negative (tube character)
+    // Asymmetric soft-clip: positive half clips harder (tube character)
     inline float asymClip(float x)
     {
         if (x >= 0.0f) return 1.0f - std::exp(-x);
@@ -104,13 +108,13 @@ void AmpLookAndFeel::drawButtonBackground(juce::Graphics& g, juce::Button& butto
     juce::Colour base = button.getToggleState()
                         ? juce::Colour::fromRGB(180,60,40)
                         : juce::Colour::fromRGB(55,55,58);
-    if (isButtonDown) base = base.brighter(0.18f);
+    if (isButtonDown)     base = base.brighter(0.18f);
     else if (isMouseOver) base = base.brighter(0.08f);
 
     g.setColour(juce::Colours::black.withAlpha(0.35f));
     g.fillRoundedRectangle(bounds.translated(0.0f,2.0f), 8.0f);
     juce::ColourGradient bg(base.brighter(0.12f), bounds.getCentreX(), bounds.getY(),
-                            base.darker(0.18f), bounds.getCentreX(), bounds.getBottom(), false);
+                            base.darker(0.18f),   bounds.getCentreX(), bounds.getBottom(), false);
     g.setGradientFill(bg); g.fillRoundedRectangle(bounds, 8.0f);
     g.setColour(juce::Colour::fromRGB(120,120,125));
     g.drawRoundedRectangle(bounds, 8.0f, 1.0f);
@@ -148,6 +152,10 @@ MainComponent::MainComponent()
     loadIrButton.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(250,245,235));
     addAndMakeVisible(loadIrButton);
 
+    loadNamButton.onClick = [this] { loadNamFile(); };
+    loadNamButton.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(250,245,235));
+    addAndMakeVisible(loadNamButton);
+
     // Sliders
     setupSlider(gainSlider,      gainLabel,      "INPUT",    0.0,   4.0,  0.01,  1.0);
     setupSlider(gateSlider,      gateLabel,      "GATE",   -80.0, -20.0,  1.0, -55.0);
@@ -177,6 +185,7 @@ MainComponent::MainComponent()
     setupBypassButton(reverbBypassButton, controlsContent);
     setupBypassButton(delayBypassButton,  controlsContent);
     setupBypassButton(cabBypassButton,    controlsContent);
+    setupBypassButton(namBypassButton,    controlsContent);
 
     // Meter label
     meterLabel.setText("LEVEL", juce::dontSendNotification);
@@ -193,12 +202,19 @@ MainComponent::MainComponent()
     clipLabel.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(clipLabel);
 
-    // IR status label
+    // IR status
     irStatusLabel.setText("No IR loaded", juce::dontSendNotification);
     irStatusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(180,160,120));
     irStatusLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
     irStatusLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(irStatusLabel);
+
+    // NAM status
+    namStatusLabel.setText("No NAM loaded", juce::dontSendNotification);
+    namStatusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(140,200,140));
+    namStatusLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
+    namStatusLabel.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(namStatusLabel);
 
     updateToneCoefficient();
     updateEqFilters();
@@ -215,6 +231,9 @@ MainComponent::~MainComponent()
     setLookAndFeel(nullptr);
     ampLookAndFeel.reset();
     shutdownAudio();
+    // Ensure pending model is destroyed on message thread (safe)
+    namModelPending.reset();
+    namModel.reset();
 }
 
 // =============================================================================
@@ -229,7 +248,6 @@ void MainComponent::setupSlider(juce::Slider& slider, juce::Label& label,
     label.setText(text, juce::dontSendNotification);
     styleValueLabel(label);
     controlsContent.addAndMakeVisible(label);
-
     slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     slider.setRotaryParameters(juce::degreesToRadians(210.0f), juce::degreesToRadians(510.0f), true);
     slider.setRange(minValue, maxValue, interval);
@@ -300,6 +318,7 @@ void MainComponent::savePreset()
             xml.setAttribute("reverbBypass", (int)reverbBypassed);
             xml.setAttribute("delayBypass",  (int)delayBypassed);
             xml.setAttribute("cabBypass",    (int)cabBypassed);
+            xml.setAttribute("namBypass",    (int)namBypassed);
             xml.writeTo(result.withFileExtension("xml"));
         });
 }
@@ -331,17 +350,85 @@ void MainComponent::loadIrFile()
         {
             const auto result = fc.getResult();
             if (result == juce::File{}) return;
-
-            // Load IR on message thread, then prepare on audio thread side via convolution.loadImpulseResponse
             convolution.loadImpulseResponse(result,
                                             juce::dsp::Convolution::Stereo::yes,
                                             juce::dsp::Convolution::Trim::yes,
                                             0);
             irLoaded = true;
-
             juce::MessageManager::callAsync([this, name = result.getFileNameWithoutExtension()]()
             {
                 irStatusLabel.setText("IR: " + name, juce::dontSendNotification);
+            });
+        });
+}
+
+void MainComponent::loadNamFile()
+{
+    fileChooser = std::make_unique<juce::FileChooser>(
+        "Load NAM Model",
+        juce::File::getSpecialLocation(juce::File::userDocumentsDirectory), "*.nam");
+    fileChooser->launchAsync(
+        juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+        [this](const juce::FileChooser& fc)
+        {
+            const auto result = fc.getResult();
+            if (result == juce::File{}) return;
+
+            // Load on a background thread — NAM parsing can take ~100-500ms
+            juce::Thread::launch([this, result]()
+            {
+                std::unique_ptr<nam::DSP> newModel;
+                bool success = false;
+                juce::String errorMsg;
+
+                try
+                {
+                    // Use wstring on Windows to handle Unicode paths correctly
+                    const std::wstring namPathW(result.getFullPathName().toWideCharPointer());
+                    const std::filesystem::path namPath(namPathW);
+
+                    // Verify file exists before passing to NAM
+                    if (!std::filesystem::exists(namPath))
+                        throw std::runtime_error("File not found: " + result.getFullPathName().toStdString());
+
+                    newModel = nam::get_dsp(namPath);
+
+                    if (newModel != nullptr)
+                    {
+                        // Reset: sample rate + buffer size set eder, sonra prewarm çalıştırır
+                        newModel->ResetAndPrewarm(currentSampleRate, currentBlockSize);
+                        success = true;
+                    }
+                }
+                catch (const std::exception& e)
+                {
+                    errorMsg = juce::String(e.what());
+                }
+
+                juce::MessageManager::callAsync([this, success, errorMsg,
+                                                  name = result.getFileNameWithoutExtension(),
+                                                  model = std::move(newModel)]() mutable
+                {
+                    if (success && model != nullptr)
+                    {
+                        // Hand the model to the audio thread via the pending slot
+                        {
+                            std::lock_guard<std::mutex> lock(namSwapMutex);
+                            namModelPending = std::move(model);
+                        }
+                        namLoaded = true;
+                        namStatusLabel.setText("NAM: " + name, juce::dontSendNotification);
+                        namStatusLabel.setColour(juce::Label::textColourId,
+                                                  juce::Colour::fromRGB(100, 220, 100));
+                    }
+                    else
+                    {
+                        namStatusLabel.setText("NAM load failed: " + errorMsg,
+                                               juce::dontSendNotification);
+                        namStatusLabel.setColour(juce::Label::textColourId,
+                                                  juce::Colour::fromRGB(220, 80, 80));
+                    }
+                });
             });
         });
 }
@@ -365,6 +452,7 @@ void MainComponent::applyPreset(const juce::XmlElement& xml)
     reverbBypassButton.setToggleState(xml.getIntAttribute("reverbBypass", 0)!=0, juce::sendNotification);
     delayBypassButton.setToggleState (xml.getIntAttribute("delayBypass",  0)!=0, juce::sendNotification);
     cabBypassButton.setToggleState   (xml.getIntAttribute("cabBypass",    0)!=0, juce::sendNotification);
+    namBypassButton.setToggleState   (xml.getIntAttribute("namBypass",    0)!=0, juce::sendNotification);
 }
 
 // =============================================================================
@@ -374,9 +462,11 @@ void MainComponent::applyPreset(const juce::XmlElement& xml)
 void MainComponent::prepareToPlay(int samplesPerBlockExpected, double sampleRate)
 {
     currentSampleRate = sampleRate;
+    currentBlockSize  = samplesPerBlockExpected;
+
     toneStateLeft = toneStateRight = 0.0f;
-    gateEnvelope = gateGain = 0.0f;
-    gateGain = 1.0f;
+    gateEnvelope  = 0.0f;
+    gateGain      = 1.0f;
 
     updateToneCoefficient();
     updateEqFilters();
@@ -387,8 +477,7 @@ void MainComponent::prepareToPlay(int samplesPerBlockExpected, double sampleRate
     reverbProcessor.reset();
 
     // Delay buffer
-    const int delayBufSize = (int)(sampleRate * 2.0);
-    delayBuffer.setSize(2, delayBufSize);
+    delayBuffer.setSize(2, (int)(sampleRate * 2.0));
     delayBuffer.clear();
     delayWritePosition = 0;
 
@@ -399,6 +488,16 @@ void MainComponent::prepareToPlay(int samplesPerBlockExpected, double sampleRate
     convolution.prepare(dspSpec);
 
     irWorkBuffer.setSize(2, samplesPerBlockExpected);
+
+    // NAM scratch buffers — NAM_SAMPLE is double by default
+    namInputBuf .resize((size_t)samplesPerBlockExpected);
+    namOutputBuf.resize((size_t)samplesPerBlockExpected);
+    namInputPtr  = namInputBuf.data();
+    namOutputPtr = namOutputBuf.data();
+
+    // Eğer NAM modeli zaten yüklüyse yeni sample rate ile reset et
+    if (namModel != nullptr)
+        namModel->ResetAndPrewarm(sampleRate, samplesPerBlockExpected);
 }
 
 void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferToFill)
@@ -414,20 +513,53 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
     auto* leftData  = audioBuffer->getWritePointer(0, startSample);
     auto* rightData = (numChannels > 1) ? audioBuffer->getWritePointer(1, startSample) : nullptr;
 
+    // --- Swap in any pending NAM model (lock-free fast path when no swap needed) ---
+    if (namModelPending != nullptr)
+    {
+        std::unique_ptr<nam::DSP> old;
+        {
+            std::lock_guard<std::mutex> lock(namSwapMutex);
+            if (namModelPending != nullptr)
+            {
+                old            = std::move(namModel);
+                namModel       = std::move(namModelPending);
+            }
+        }
+        // old model destroyed here (outside lock, fine on audio thread)
+    }
+
+    // --- Step 1: Gate + input gain (per sample) ---
+    for (int i = 0; i < numSamples; ++i)
+    {
+        float s = processGateSample(leftData[i]);
+        s *= inputGain;
+
+        if (namLoaded && !namBypassed && namModel != nullptr)
+        {
+            // NAM aktifken: drive knob = model input gain (0.5x - 3.0x)
+            s *= (0.5f + driveValue * 2.5f);
+        }
+        else
+        {
+            // Classic preamp
+            s = processPreampSample(s);
+        }
+
+        leftData[i] = s;
+        if (rightData) rightData[i] = s;
+    }
+
+    // --- Step 2: NAM block (ham sinyal üzerinde, EQ/tone öncesi) ---
+    if (namLoaded && !namBypassed && namModel != nullptr)
+        processNamBlock(leftData, rightData ? rightData : leftData, numSamples);
+
+    // --- Step 3: Post-amp EQ + tone + presence + master (per sample) ---
     float maxLevel = 0.0f;
 
     for (int i = 0; i < numSamples; ++i)
     {
-        // Gate
-        float s = processGateSample(leftData[i]);
+        float s = leftData[i];
 
-        // Input gain
-        s *= inputGain;
-
-        // Pre-amp tight HP + 4-stage asymmetric distortion
-        s = processPreampSample(s);
-
-        // Post-drive EQ
         if (!eqBypassed)
         {
             s = bassFilterLeft.processSingleSampleRaw(s);
@@ -435,18 +567,12 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
             s = trebleFilterLeft.processSingleSampleRaw(s);
         }
 
-        // Tone LP
         s = processToneSample(s, 0);
-
-        // Presence boost
         s = presenceFilterLeft.processSingleSampleRaw(s);
-
-        // Master volume
         s *= masterValue;
 
         leftData[i] = s;
 
-        // Right channel: copy + keep filter states in sync
         if (rightData)
         {
             if (!eqBypassed)
@@ -464,7 +590,7 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
         if (absSample > maxLevel) maxLevel = absSample;
     }
 
-    // Cabinet simulation (EQ or IR convolution)
+    // Cabinet
     if (!cabBypassed)
         processCabBlock(leftData, rightData ? rightData : leftData, numSamples);
 
@@ -514,33 +640,31 @@ float MainComponent::processGateSample(float inputSample)
 
 float MainComponent::processPreampSample(float inputSample)
 {
-    // 1. Tight high-pass: remove sub-bass before distortion (keeps palm mutes tight)
+    // drive=0'da tamamen temiz sinyal — hiçbir distortion uygulanmaz
+    if (driveValue < 0.01f)
+        return inputSample;
+
+    // Tight HP sadece drive aktifken — clean tonu bozmaz
     float s = preHpFilterLeft.processSingleSampleRaw(inputSample);
 
-    // 2. Pre-gain boost – maps driveValue 0..1 to ~6x..50x voltage gain like a real preamp
+    // Pre-gain: drive arttıkça 6x -> 50x
     const float preGain = 6.0f + driveValue * 44.0f;
     s *= preGain;
 
-    // 3. Stage 1 – asymmetric soft clip (positive half clips harder = tube asymmetry)
+    // 4-stage asymmetric clipping
     s = asymClip(s);
-
-    // 4. Interstage mid-scoop (Metallica "scooped" sound: cut ~400 Hz, keep lows & highs)
-    // We do this by blending the dry with a slight low-pass to exaggerate the scoop
-    // The actual graphic mid-scoop is handled by the EQ section knob
-
-    // 5. Stage 2 – harder clip
     s *= 1.8f + driveValue * 2.0f;
     s = asymClip(s);
-
-    // 6. Stage 3 – tanh saturation for smooth top-end
     s = std::tanh(s * (1.0f + driveValue * 1.5f));
-
-    // 7. Stage 4 – final soft limiter, prevents exceeding unity
     s = asymClip(s * 1.2f);
 
-    // 8. Output trim: compensate for gain staging so moderate drive doesn't blow up
-    const float outputTrim = 0.18f - driveValue * 0.06f;
-    return s * outputTrim;
+    // Output trim — gain staging kompansasyonu
+    const float trimmed = s * (0.18f - driveValue * 0.06f);
+
+    // Drive düşükken orijinal sinyal ile blend et (smooth geçiş)
+    const float blend = driveValue * 10.0f; // 0..1 arası (drive 0.1'de tam drive)
+    const float blendClamped = blend < 1.0f ? blend : 1.0f;
+    return inputSample * (1.0f - blendClamped) + trimmed * blendClamped;
 }
 
 float MainComponent::processToneSample(float inputSample, int channel)
@@ -548,6 +672,36 @@ float MainComponent::processToneSample(float inputSample, int channel)
     float& state = (channel == 0) ? toneStateLeft : toneStateRight;
     state += toneCoefficient * (inputSample - state);
     return state;
+}
+
+void MainComponent::processNamBlock(float* leftData, float* rightData, int numSamples)
+{
+    if (namModel == nullptr) return;
+
+    // Resize scratch buffers if needed (should already be correct from prepareToPlay)
+    if ((int)namInputBuf.size() < numSamples)
+    {
+        namInputBuf.resize((size_t)numSamples);
+        namOutputBuf.resize((size_t)numSamples);
+        namInputPtr  = namInputBuf.data();
+        namOutputPtr = namOutputBuf.data();
+    }
+
+    // Copy float input to NAM_SAMPLE (double) buffer
+    for (int i = 0; i < numSamples; ++i)
+        namInputBuf[(size_t)i] = (double)leftData[i];
+
+    // Process: nam::DSP::process(input**, output**, numFrames)
+    namModel->process(&namInputPtr, &namOutputPtr, numSamples);
+
+    // Copy NAM output back and apply to both channels
+    for (int i = 0; i < numSamples; ++i)
+    {
+        const float out = (float)namOutputBuf[(size_t)i];
+        leftData[i]  = out;
+        if (rightData != leftData)
+            rightData[i] = out;
+    }
 }
 
 void MainComponent::processDelayBlock(float* leftData, float* rightData, int numSamples)
@@ -583,8 +737,6 @@ void MainComponent::processCabBlock(float* leftData, float* rightData, int numSa
 {
     if (irLoaded)
     {
-        // IR convolution path
-        // Copy to irWorkBuffer, run convolution, copy back
         irWorkBuffer.setSize(2, numSamples, false, false, true);
         irWorkBuffer.copyFrom(0, 0, leftData,  numSamples);
         irWorkBuffer.copyFrom(1, 0, rightData, numSamples);
@@ -593,24 +745,20 @@ void MainComponent::processCabBlock(float* leftData, float* rightData, int numSa
         juce::dsp::ProcessContextReplacing<float> ctx(block);
         convolution.process(ctx);
 
-        // copyFrom destination <- source: copy irWorkBuffer channel back to raw pointers
         juce::FloatVectorOperations::copy(leftData,  irWorkBuffer.getReadPointer(0), numSamples);
         juce::FloatVectorOperations::copy(rightData, irWorkBuffer.getReadPointer(1), numSamples);
     }
     else
     {
-        // Fallback: simple 4x12 cabinet EQ approximation
+        // Fallback: Celestion Vintage 30 approximation
         for (int i = 0; i < numSamples; ++i)
         {
             float s = leftData[i];
-            s = cabLoFilterLeft.processSingleSampleRaw(s);   // remove sub-bass
-            s = cabMidFilterLeft.processSingleSampleRaw(s);  // 1 kHz dip (box resonance)
-            s = cabHiFilterLeft.processSingleSampleRaw(s);   // roll off above 5 kHz
-
+            s = cabLoFilterLeft.processSingleSampleRaw(s);
+            s = cabMidFilterLeft.processSingleSampleRaw(s);
+            s = cabHiFilterLeft.processSingleSampleRaw(s);
             leftData[i]  = s;
-            rightData[i] = s;  // mono cab sim
-
-            // Keep right filter states in sync
+            rightData[i] = s;
             cabLoFilterRight.processSingleSampleRaw(s);
             cabMidFilterRight.processSingleSampleRaw(s);
             cabHiFilterRight.processSingleSampleRaw(s);
@@ -641,7 +789,6 @@ void MainComponent::updateEqFilters()
 
 void MainComponent::updatePreampFilters()
 {
-    // Tight 80 Hz high-pass (2nd order Butterworth) — keeps palm mutes punchy
     const auto hpC = juce::IIRCoefficients::makeHighPass(currentSampleRate, 80.0, 0.707);
     preHpFilterLeft.setCoefficients(hpC);
     preHpFilterRight.setCoefficients(hpC);
@@ -649,7 +796,6 @@ void MainComponent::updatePreampFilters()
 
 void MainComponent::updatePresenceFilter()
 {
-    // Presence: high-shelf at 3.5 kHz, +0 to +10 dB
     const float presenceDb = presenceValue * 10.0f;
     const auto presC = juce::IIRCoefficients::makeHighShelf(currentSampleRate, 3500.0, 0.707f,
                                                              juce::Decibels::decibelsToGain(presenceDb));
@@ -659,15 +805,9 @@ void MainComponent::updatePresenceFilter()
 
 void MainComponent::updateCabFilters()
 {
-    // Approximate 4x12 Celestion Vintage 30 frequency response:
-    // - Low-shelf cut below 100 Hz (-6 dB) — cab doesn't reproduce deep bass
-    // - Peak dip at ~1 kHz (-3 dB, Q=1.2) — box resonance notch
-    // - High-shelf cut above 5 kHz (-12 dB) — speaker cone roll-off
-
     const auto loC  = juce::IIRCoefficients::makeLowShelf  (currentSampleRate, 100.0,  0.707f, juce::Decibels::decibelsToGain(-6.0f));
-    const auto midC = juce::IIRCoefficients::makePeakFilter (currentSampleRate, 1000.0, 1.2f,   juce::Decibels::decibelsToGain(-3.0f));
+    const auto midC = juce::IIRCoefficients::makePeakFilter(currentSampleRate, 1000.0, 1.2f,   juce::Decibels::decibelsToGain(-3.0f));
     const auto hiC  = juce::IIRCoefficients::makeHighShelf (currentSampleRate, 5000.0, 0.707f, juce::Decibels::decibelsToGain(-12.0f));
-
     cabLoFilterLeft.setCoefficients(loC);   cabLoFilterRight.setCoefficients(loC);
     cabMidFilterLeft.setCoefficients(midC); cabMidFilterRight.setCoefficients(midC);
     cabHiFilterLeft.setCoefficients(hiC);   cabHiFilterRight.setCoefficients(hiC);
@@ -696,7 +836,6 @@ void MainComponent::drawAmpBackground(juce::Graphics& g, juce::Rectangle<int> ar
     g.fillRoundedRectangle(area.toFloat(), 26.0f);
     g.setColour(juce::Colour::fromRGB(86,58,26).withAlpha(0.85f));
     g.drawRoundedRectangle(area.toFloat().reduced(1.5f), 26.0f, 3.0f);
-
     auto inner = area.reduced(14);
     g.setColour(juce::Colour::fromRGB(24,24,24));
     g.fillRoundedRectangle(inner.toFloat(), 18.0f);
@@ -713,19 +852,15 @@ void MainComponent::drawAmpHeader(juce::Graphics& g, juce::Rectangle<int> area)
                                juce::Colour::fromRGB(120,88,32),  area.getBottomRight().toFloat(), false);
     g.setGradientFill(brass);
     g.fillRoundedRectangle(area.toFloat(), 18.0f);
-
     auto hi = area.removeFromTop(16);
     g.setColour(juce::Colour::fromRGB(255,238,185).withAlpha(0.30f));
     g.fillRoundedRectangle(hi.toFloat(), 18.0f);
-
     g.setColour(juce::Colour::fromRGB(74,48,18));
     g.drawRoundedRectangle(headerBounds.toFloat(), 18.0f, 1.4f);
-
     g.setColour(juce::Colour::fromRGB(36,24,10));
     g.setFont(juce::Font(juce::FontOptions(30.0f).withStyle("Bold")));
     g.drawText("MySecondAmp", headerBounds.getX()+24, headerBounds.getY()+12,
                headerBounds.getWidth()-220, 34, juce::Justification::centredLeft);
-
     g.setFont(juce::Font(juce::FontOptions(12.5f)));
     g.drawText("Custom Guitar Amplifier", headerBounds.getX()+28, headerBounds.getBottom()-28,
                220, 18, juce::Justification::centredLeft);
@@ -754,26 +889,21 @@ void MainComponent::drawLevelMeter(juce::Graphics& g, juce::Rectangle<int> meter
 {
     g.setColour(juce::Colour::fromRGB(18,18,18));
     g.fillRoundedRectangle(meterArea.toFloat(), 8.0f);
-
     auto inner = meterArea.reduced(3);
     juce::ColourGradient bg(juce::Colour::fromRGB(20,20,20), inner.getTopLeft().toFloat(),
                             juce::Colour::fromRGB(12,18,12), inner.getBottomLeft().toFloat(), false);
     g.setGradientFill(bg);
     g.fillRoundedRectangle(inner.toFloat(), 6.0f);
-
-    const float boosted  = juce::jlimit(0.0f,1.0f, std::pow(currentLevel*2.2f, 0.68f));
-    const int   fillW    = (int)(inner.getWidth() * boosted);
+    const float boosted = juce::jlimit(0.0f,1.0f, std::pow(currentLevel*2.2f, 0.68f));
+    const int   fillW   = (int)(inner.getWidth() * boosted);
     juce::Rectangle<int> filled(inner.getX(), inner.getY(), fillW, inner.getHeight());
-
     juce::ColourGradient lg(juce::Colour::fromRGB(90,255,120), filled.getTopLeft().toFloat(),
                             juce::Colour::fromRGB(255,210,70), filled.getCentre().toFloat(), false);
     lg.addColour(1.0, juce::Colour::fromRGB(255,70,70));
     g.setGradientFill(lg);
     g.fillRoundedRectangle(filled.toFloat(), 5.0f);
-
     g.setColour(juce::Colour::fromRGB(95,95,95));
     g.drawRoundedRectangle(meterArea.toFloat(), 8.0f, 1.0f);
-
     g.setColour(juce::Colours::white.withAlpha(0.12f));
     for (int idx = 1; idx < 10; ++idx)
     {
@@ -816,10 +946,8 @@ void MainComponent::resized()
 {
     auto bounds = getLocalBounds().reduced(18);
     ampBodyBounds = bounds;
-
     auto inner = ampBodyBounds.reduced(20, 18);
     headerBounds = inner.removeFromTop(86);
-
     footerBounds = juce::Rectangle<int>(ampBodyBounds.getX()+22, ampBodyBounds.getBottom()-56,
                                         ampBodyBounds.getWidth()-44, 32);
 
@@ -828,18 +956,16 @@ void MainComponent::resized()
     savePresetButton.setBounds   (headerBounds.getRight()-340, headerBounds.getY()+12, 150, 32);
     loadPresetButton.setBounds   (headerBounds.getRight()-510, headerBounds.getY()+12, 150, 32);
     loadIrButton.setBounds       (headerBounds.getRight()-660, headerBounds.getY()+12, 140, 32);
+    loadNamButton.setBounds      (headerBounds.getRight()-810, headerBounds.getY()+12, 140, 32);
 
-    // IR status label (left of header)
-    irStatusLabel.setBounds(headerBounds.getX()+24, headerBounds.getBottom()-24,
-                            headerBounds.getWidth()/2, 18);
+    // Status labels (bottom-left of header)
+    irStatusLabel.setBounds (headerBounds.getX()+24, headerBounds.getBottom()-28, 280, 16);
+    namStatusLabel.setBounds(headerBounds.getX()+24, headerBounds.getBottom()-12, 280, 16);
 
     // Meter zone
-    const int meterLabelH  = 18;
-    const int meterH       = 14;
-    const int meterW       = 360;
-    const int meterZoneH   = meterLabelH + 6 + meterH;
+    const int meterLabelH  = 18, meterH = 14, meterW = 360;
     const int meterZoneBot = footerBounds.getY() - 16;
-    const int meterZoneTop = meterZoneBot - meterZoneH;
+    const int meterZoneTop = meterZoneBot - (meterLabelH + 6 + meterH);
     const int meterX       = ampBodyBounds.getCentreX() - meterW/2;
 
     meterLabel.setBounds(meterX, meterZoneTop, meterW, meterLabelH);
@@ -864,9 +990,8 @@ void MainComponent::resized()
 
 void MainComponent::layoutAmpControls(juce::Rectangle<int> contentArea)
 {
-    const int secLabelH = 26, knobW = 106, knobH = 126, vPad = 8;
-    const int topMargin = 16, bottomMargin = 12, lrMargin = 20;
-    const int rowGap = 18, colGap = 18;
+    const int secLabelH=26, knobW=106, knobH=126, vPad=8;
+    const int topMargin=16, bottomMargin=12, lrMargin=20, rowGap=18, colGap=18;
 
     auto work = contentArea.reduced(lrMargin, topMargin);
     work.removeFromBottom(bottomMargin);
@@ -906,18 +1031,19 @@ void MainComponent::layoutAmpControls(juce::Rectangle<int> contentArea)
     placeGroup(eqArea,    eqSectionLabel,    { {&bassLabel,&bassSlider}, {&midLabel,&midSlider}, {&trebleLabel,&trebleSlider} });
     placeGroup(fxArea,    fxSectionLabel,    { {&reverbLabel,&reverbSlider}, {&delayTimeLabel,&delayTimeSlider}, {&delayMixLabel,&delayMixSlider} });
 
-    // Bypass row
+    // Bypass row — 5 buton
     {
         auto ba = bypassRow.reduced(4,4);
         bypassSectionLabel.setBounds(ba.removeFromTop(secLabelH));
-        const int btnW=72, btnH=28, gap=14;
-        const int totalBW = 4*btnW + 3*gap;
+        const int btnW=72, btnH=28, gap=10;
+        const int totalBW = 5*btnW + 4*gap;
         int bx = ba.getCentreX() - totalBW/2;
         const int by = ba.getY();
-        eqBypassButton.setBounds    (bx,             by, btnW, btnH);
-        reverbBypassButton.setBounds(bx+btnW+gap,    by, btnW, btnH);
-        delayBypassButton.setBounds (bx+2*(btnW+gap),by, btnW, btnH);
-        cabBypassButton.setBounds   (bx+3*(btnW+gap),by, btnW, btnH);
+        eqBypassButton.setBounds    (bx,              by, btnW, btnH);
+        reverbBypassButton.setBounds(bx+  (btnW+gap), by, btnW, btnH);
+        delayBypassButton.setBounds (bx+2*(btnW+gap), by, btnW, btnH);
+        cabBypassButton.setBounds   (bx+3*(btnW+gap), by, btnW, btnH);
+        namBypassButton.setBounds   (bx+4*(btnW+gap), by, btnW, btnH);
     }
 
     controlsContent.setSize(contentArea.getWidth(), contentArea.getHeight());
@@ -930,15 +1056,15 @@ void MainComponent::layoutAmpControls(juce::Rectangle<int> contentArea)
 void MainComponent::sliderValueChanged(juce::Slider* s)
 {
     if      (s == &gainSlider)      inputGain       = (float)gainSlider.getValue();
-    else if (s == &toneSlider)    { toneValue        = (float)toneSlider.getValue();      updateToneCoefficient(); }
+    else if (s == &toneSlider)    { toneValue        = (float)toneSlider.getValue();     updateToneCoefficient(); }
     else if (s == &driveSlider)     driveValue      = (float)driveSlider.getValue();
-    else if (s == &presenceSlider){ presenceValue    = (float)presenceSlider.getValue();  updatePresenceFilter(); }
-    else if (s == &bassSlider)    { bassValue        = (float)bassSlider.getValue();       updateEqFilters(); }
-    else if (s == &midSlider)     { midValue         = (float)midSlider.getValue();        updateEqFilters(); }
-    else if (s == &trebleSlider)  { trebleValue      = (float)trebleSlider.getValue();     updateEqFilters(); }
+    else if (s == &presenceSlider){ presenceValue    = (float)presenceSlider.getValue(); updatePresenceFilter(); }
+    else if (s == &bassSlider)    { bassValue        = (float)bassSlider.getValue();      updateEqFilters(); }
+    else if (s == &midSlider)     { midValue         = (float)midSlider.getValue();       updateEqFilters(); }
+    else if (s == &trebleSlider)  { trebleValue      = (float)trebleSlider.getValue();    updateEqFilters(); }
     else if (s == &masterSlider)    masterValue     = (float)masterSlider.getValue();
     else if (s == &gateSlider)      gateThresholdDb = (float)gateSlider.getValue();
-    else if (s == &reverbSlider)  { reverbValue      = (float)reverbSlider.getValue();     updateReverbParameters(); }
+    else if (s == &reverbSlider)  { reverbValue      = (float)reverbSlider.getValue();    updateReverbParameters(); }
     else if (s == &delayTimeSlider) delayTimeMs     = (float)delayTimeSlider.getValue();
     else if (s == &delayMixSlider)  delayMixValue   = (float)delayMixSlider.getValue();
 }
@@ -949,19 +1075,13 @@ void MainComponent::buttonClicked(juce::Button* b)
     else if (b == &reverbBypassButton) reverbBypassed = reverbBypassButton.getToggleState();
     else if (b == &delayBypassButton)  delayBypassed  = delayBypassButton.getToggleState();
     else if (b == &cabBypassButton)    cabBypassed    = cabBypassButton.getToggleState();
+    else if (b == &namBypassButton)    namBypassed    = namBypassButton.getToggleState();
 }
 
 void MainComponent::timerCallback()
 {
-    if (currentLevel >= 1.0f)
-    {
-        clipping      = true;
-        clipHoldTimer = 30;
-    }
-    else if (clipHoldTimer > 0)
-    {
-        if (--clipHoldTimer == 0) clipping = false;
-    }
+    if (currentLevel >= 1.0f)      { clipping = true; clipHoldTimer = 30; }
+    else if (clipHoldTimer > 0)    { if (--clipHoldTimer == 0) clipping = false; }
     repaint(levelMeterBounds.expanded(4));
     repaint(clipLabel.getBounds().expanded(2));
 }
