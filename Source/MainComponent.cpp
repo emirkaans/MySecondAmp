@@ -10,25 +10,47 @@ namespace
         label.setJustificationType(juce::Justification::centredLeft);
         parent.addAndMakeVisible(label);
     }
+
+    class AudioSettingsContent final : public juce::Component
+    {
+    public:
+        explicit AudioSettingsContent(juce::AudioDeviceManager& audioDeviceManager)
+            : audioSetupComponent(audioDeviceManager,
+                                  0, 2,
+                                  0, 2,
+                                  true,
+                                  false,
+                                  true,
+                                  false)
+        {
+            addAndMakeVisible(audioSetupComponent);
+            setSize(560, 420);
+        }
+
+        void resized() override
+        {
+            audioSetupComponent.setBounds(getLocalBounds().reduced(12));
+        }
+
+    private:
+        juce::AudioDeviceSelectorComponent audioSetupComponent;
+    };
 }
 
 MainComponent::MainComponent()
-    : audioSetupComponent(deviceManager,
-                          0, 2,
-                          0, 2,
-                          true,
-                          false,
-                          true,
-                          false)
 {
     setSize(1180, 760);
     setAudioChannels(2, 2);
 
-    addAndMakeVisible(audioSetupComponent);
-
     controlsViewport.setViewedComponent(&controlsContent, false);
     controlsViewport.setScrollBarsShown(true, false);
     addAndMakeVisible(controlsViewport);
+
+    audioSettingsButton.onClick = [this]()
+    {
+        openAudioSettingsWindow();
+    };
+    addAndMakeVisible(audioSettingsButton);
 
     setupSlider(gainSlider, gainLabel, "Input Gain", 0.0, 4.0, 0.01, 1.0);
     setupSlider(toneSlider, toneLabel, "Tone", 0.0, 1.0, 0.01, 0.55);
@@ -54,6 +76,9 @@ MainComponent::MainComponent()
     meterLabel.setColour(juce::Label::textColourId, juce::Colours::white);
     meterLabel.setJustificationType(juce::Justification::centredLeft);
     controlsContent.addAndMakeVisible(meterLabel);
+
+    audioSettingsButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(90, 70, 130));
+    audioSettingsButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
 
     updateToneCoefficient();
     updateEqFilters();
@@ -85,6 +110,24 @@ void MainComponent::setupSlider(juce::Slider& slider,
     slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 72, 24);
     slider.addListener(this);
     controlsContent.addAndMakeVisible(slider);
+}
+
+void MainComponent::openAudioSettingsWindow()
+{
+    auto* settingsContent = new AudioSettingsContent(deviceManager);
+
+    juce::DialogWindow::LaunchOptions dialogOptions;
+    dialogOptions.content.setOwned(settingsContent);
+    dialogOptions.dialogTitle = "Audio Settings";
+    dialogOptions.dialogBackgroundColour = juce::Colour::fromRGB(28, 28, 34);
+    dialogOptions.escapeKeyTriggersCloseButton = true;
+    dialogOptions.useNativeTitleBar = true;
+    dialogOptions.resizable = true;
+
+    if (auto* parentComponent = getTopLevelComponent())
+        dialogOptions.componentToCentreAround = parentComponent;
+
+    dialogOptions.launchAsync();
 }
 
 void MainComponent::prepareToPlay(int samplesPerBlockExpected, double sampleRate)
@@ -238,34 +281,13 @@ void MainComponent::paint(juce::Graphics& graphics)
     graphics.fillAll(juce::Colour::fromRGB(16, 16, 20));
 
     auto bounds = getLocalBounds().reduced(12);
-    auto headerArea = bounds.removeFromTop(64);
+    auto headerArea = bounds.removeFromTop(70);
+    auto mainPanelArea = bounds.reduced(6);
 
     const bool isCompactHeader = getWidth() < 760;
 
-    auto contentArea = bounds;
-    auto deviceArea = contentArea;
-    auto controlsArea = contentArea;
-
-    if (getWidth() < 920)
-    {
-        deviceArea = contentArea.removeFromTop(juce::jmax(220, contentArea.getHeight() / 3));
-        controlsArea = contentArea;
-    }
-    else
-    {
-        const int leftPanelWidth = juce::jlimit(300, 520, contentArea.getWidth() * 38 / 100);
-        deviceArea = contentArea.removeFromLeft(leftPanelWidth);
-        controlsArea = contentArea;
-    }
-
-    deviceArea = deviceArea.reduced(6);
-    controlsArea = controlsArea.reduced(6);
-
-    graphics.setColour(juce::Colour::fromRGB(30, 30, 36));
-    graphics.fillRoundedRectangle(deviceArea.toFloat(), 18.0f);
-
     graphics.setColour(juce::Colour::fromRGB(40, 34, 52));
-    graphics.fillRoundedRectangle(controlsArea.toFloat(), 18.0f);
+    graphics.fillRoundedRectangle(mainPanelArea.toFloat(), 18.0f);
 
     auto titleArea = headerArea.removeFromLeft(isCompactHeader ? headerArea.getWidth() : headerArea.getWidth() / 2);
     auto subtitleArea = headerArea;
@@ -354,27 +376,20 @@ void MainComponent::layoutControlsSingleColumn(int contentWidth)
 void MainComponent::resized()
 {
     auto bounds = getLocalBounds().reduced(12);
-    auto headerArea = bounds.removeFromTop(64);
+    auto headerArea = bounds.removeFromTop(70);
+    auto contentArea = bounds.reduced(6);
 
-    juce::ignoreUnused(headerArea);
+    const int buttonWidth = getWidth() < 700 ? 130 : 150;
+    const int buttonHeight = 34;
 
-    if (getWidth() < 920)
-    {
-        auto deviceArea = bounds.removeFromTop(juce::jmax(220, bounds.getHeight() / 3)).reduced(6);
-        auto controlsArea = bounds.reduced(6);
+    audioSettingsButton.setBounds(
+        headerArea.getRight() - buttonWidth,
+        headerArea.getY() + 10,
+        buttonWidth,
+        buttonHeight
+    );
 
-        audioSetupComponent.setBounds(deviceArea.reduced(12));
-        controlsViewport.setBounds(controlsArea);
-    }
-    else
-    {
-        const int leftPanelWidth = juce::jlimit(300, 520, bounds.getWidth() * 38 / 100);
-        auto deviceArea = bounds.removeFromLeft(leftPanelWidth).reduced(6);
-        auto controlsArea = bounds.reduced(6);
-
-        audioSetupComponent.setBounds(deviceArea.reduced(12));
-        controlsViewport.setBounds(controlsArea);
-    }
+    controlsViewport.setBounds(contentArea);
 
     auto viewportBounds = controlsViewport.getLocalBounds().reduced(18);
     const int contentWidth = juce::jmax(260, viewportBounds.getWidth() - 12);

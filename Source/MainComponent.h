@@ -40,9 +40,12 @@ private:
     void layoutControlsSingleColumn(int contentWidth);
     void drawLevelMeter(juce::Graphics& graphics, juce::Rectangle<int> meterArea) const;
 
-    juce::AudioDeviceSelectorComponent audioSetupComponent;
+    void openAudioSettingsWindow();
+
     juce::Viewport controlsViewport;
     juce::Component controlsContent;
+
+    juce::TextButton audioSettingsButton { "Audio Settings" };
 
     juce::Slider gainSlider;
     juce::Label gainLabel;
