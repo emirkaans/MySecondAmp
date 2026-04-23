@@ -221,9 +221,10 @@ MainComponent::MainComponent()
 
     meterLabel.setText("LEVEL", juce::dontSendNotification);
     meterLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(220, 210, 180));
-    meterLabel.setFont(juce::Font(13.0f, juce::Font::bold));
+    meterLabel.setFont(juce::Font(12.0f, juce::Font::bold));
     meterLabel.setJustificationType(juce::Justification::centred);
-    controlsContent.addAndMakeVisible(meterLabel);
+    // meterLabel artık controlsContent'e değil, doğrudan MainComponent'e ekleniyor
+    addAndMakeVisible(meterLabel);
 
     audioSettingsButton.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(250, 245, 235));
 
@@ -480,7 +481,7 @@ void MainComponent::drawAmpHeader(juce::Graphics& graphics, juce::Rectangle<int>
 
     graphics.setColour(juce::Colour::fromRGB(36, 24, 10));
     graphics.setFont(juce::Font(30.0f, juce::Font::bold));
-    graphics.drawText("VALVETONE 50",
+    graphics.drawText("MySecondAmp",
                       headerBounds.getX() + 24,
                       headerBounds.getY() + 12,
                       headerBounds.getWidth() - 220,
@@ -524,49 +525,51 @@ void MainComponent::drawAmpFooter(juce::Graphics& graphics, juce::Rectangle<int>
 void MainComponent::drawLevelMeter(juce::Graphics& graphics, juce::Rectangle<int> meterArea) const
 {
     graphics.setColour(juce::Colour::fromRGB(18, 18, 18));
-    graphics.fillRoundedRectangle(meterArea.toFloat(), 10.0f);
+    graphics.fillRoundedRectangle(meterArea.toFloat(), 8.0f);
 
-    auto innerMeterArea = meterArea.reduced(4);
+    auto innerMeterArea = meterArea.reduced(3);
 
-    juce::ColourGradient meterBackground(juce::Colour::fromRGB(18, 28, 18),
-                                         innerMeterArea.getBottomLeft().toFloat(),
-                                         juce::Colour::fromRGB(20, 20, 20),
+    juce::ColourGradient meterBackground(juce::Colour::fromRGB(20, 20, 20),
                                          innerMeterArea.getTopLeft().toFloat(),
+                                         juce::Colour::fromRGB(12, 18, 12),
+                                         innerMeterArea.getBottomLeft().toFloat(),
                                          false);
     graphics.setGradientFill(meterBackground);
-    graphics.fillRoundedRectangle(innerMeterArea.toFloat(), 8.0f);
+    graphics.fillRoundedRectangle(innerMeterArea.toFloat(), 6.0f);
 
-    const float normalizedLevel = juce::jlimit(0.0f, 1.0f, currentLevel);
-    const int filledHeight = static_cast<int>(innerMeterArea.getHeight() * normalizedLevel);
+    const float boostedLevel = juce::jlimit(0.0f, 1.0f, std::pow(currentLevel * 2.2f, 0.68f));
+    const int filledWidth = static_cast<int>(innerMeterArea.getWidth() * boostedLevel);
 
     juce::Rectangle<int> filledArea(
         innerMeterArea.getX(),
-        innerMeterArea.getBottom() - filledHeight,
-        innerMeterArea.getWidth(),
-        filledHeight
+        innerMeterArea.getY(),
+        filledWidth,
+        innerMeterArea.getHeight()
     );
 
-    juce::ColourGradient levelGradient(juce::Colour::fromRGB(255, 70, 70),
+    juce::ColourGradient levelGradient(juce::Colour::fromRGB(90, 255, 120),
                                        filledArea.getTopLeft().toFloat(),
-                                       juce::Colour::fromRGB(90, 255, 120),
-                                       filledArea.getBottomLeft().toFloat(),
+                                       juce::Colour::fromRGB(255, 210, 70),
+                                       filledArea.getCentre().toFloat(),
                                        false);
+    levelGradient.addColour(1.0, juce::Colour::fromRGB(255, 70, 70));
+
     graphics.setGradientFill(levelGradient);
-    graphics.fillRoundedRectangle(filledArea.toFloat(), 6.0f);
+    graphics.fillRoundedRectangle(filledArea.toFloat(), 5.0f);
 
     graphics.setColour(juce::Colour::fromRGB(95, 95, 95));
-    graphics.drawRoundedRectangle(meterArea.toFloat(), 10.0f, 1.2f);
+    graphics.drawRoundedRectangle(meterArea.toFloat(), 8.0f, 1.0f);
 
-    graphics.setColour(juce::Colours::white.withAlpha(0.15f));
+    graphics.setColour(juce::Colours::white.withAlpha(0.12f));
     for (int index = 1; index < 10; ++index)
     {
-        const float y = static_cast<float>(innerMeterArea.getY())
-                      + (static_cast<float>(innerMeterArea.getHeight()) / 10.0f) * static_cast<float>(index);
+        const float x = static_cast<float>(innerMeterArea.getX())
+                      + (static_cast<float>(innerMeterArea.getWidth()) / 10.0f) * static_cast<float>(index);
 
-        graphics.drawLine(static_cast<float>(innerMeterArea.getX() + 4),
-                          y,
-                          static_cast<float>(innerMeterArea.getRight() - 4),
-                          y,
+        graphics.drawLine(x,
+                          static_cast<float>(innerMeterArea.getY() + 2),
+                          x,
+                          static_cast<float>(innerMeterArea.getBottom() - 2),
                           1.0f);
     }
 }
@@ -602,17 +605,14 @@ void MainComponent::layoutAmpControls(juce::Rectangle<int> contentArea)
     const int leftRightMargin = 20;
     const int rowGap = 18;
     const int columnGap = 18;
-    const int meterColumnWidth = 72;
 
     auto workArea = contentArea.reduced(leftRightMargin, topMargin);
     workArea.removeFromBottom(bottomMargin);
 
+    // İki knob satırı
     auto firstRow = workArea.removeFromTop(170);
     workArea.removeFromTop(rowGap);
     auto secondRow = workArea.removeFromTop(170);
-
-    auto topMeterArea = firstRow.removeFromRight(meterColumnWidth);
-    firstRow.removeFromRight(10);
 
     auto inputArea = firstRow.removeFromLeft(firstRow.getWidth() / 2);
     auto ampArea = firstRow;
@@ -679,12 +679,6 @@ void MainComponent::layoutAmpControls(juce::Rectangle<int> contentArea)
         { &delayMixLabel, &delayMixSlider }
     });
 
-    meterLabel.setBounds(topMeterArea.getX(), topMeterArea.getY() + 8, topMeterArea.getWidth(), 22);
-    levelMeterBounds = juce::Rectangle<int>(topMeterArea.getX() + 18,
-                                            topMeterArea.getY() + 36,
-                                            36,
-                                            118);
-
     controlsContent.setSize(contentArea.getWidth(), contentArea.getHeight());
 }
 
@@ -707,8 +701,39 @@ void MainComponent::resized()
                                   150,
                                   32);
 
-    auto controlsArea = ampBodyBounds.reduced(26, 118);
-    controlsArea.removeFromBottom(72);
+    // Footer'ın üstünde, knob'ların altında kalan boşluğu meter bölgesine ayır
+    // controlsArea: knob'lar için
+    // meterArea: controlsArea'nın altında, footer'ın üstünde
+    const int meterZoneHeight = 46;     // label + meter için toplam yükseklik
+    const int meterLabelHeight = 18;
+    const int meterHeight = 14;
+    const int meterWidth = 360;
+    const int meterBottomMargin = 16;   // footer'dan yukarı boşluk
+
+    // meter bölgesi: footer'ın hemen üstünde
+    const int meterZoneBottom = footerBounds.getY() - meterBottomMargin;
+    const int meterZoneTop = meterZoneBottom - meterZoneHeight;
+
+    const int meterCentreX = ampBodyBounds.getCentreX();
+    const int meterLabelX = meterCentreX - meterWidth / 2;
+
+    meterLabel.setBounds(meterLabelX,
+                         meterZoneTop,
+                         meterWidth,
+                         meterLabelHeight);
+
+    levelMeterBounds = juce::Rectangle<int>(meterLabelX,
+                                            meterZoneTop + meterLabelHeight + 6,
+                                            meterWidth,
+                                            meterHeight);
+
+    // controlsArea: header'dan hemen sonra, meter zone'un hemen üstüne kadar
+    auto controlsArea = juce::Rectangle<int>(
+        ampBodyBounds.getX() + 26,
+        headerBounds.getBottom() + 14,
+        ampBodyBounds.getWidth() - 52,
+        meterZoneTop - (headerBounds.getBottom() + 14) - 8
+    );
 
     controlsViewport.setBounds(controlsArea);
     controlsContent.setBounds(controlsViewport.getLocalBounds());
@@ -771,7 +796,7 @@ void MainComponent::sliderValueChanged(juce::Slider* changedSlider)
 
 void MainComponent::timerCallback()
 {
-    repaint(levelMeterBounds.expanded(6));
+    repaint(levelMeterBounds.expanded(4));
 }
 
 float MainComponent::processDriveSample(float inputSample) const
