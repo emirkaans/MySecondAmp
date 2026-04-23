@@ -42,41 +42,37 @@ public:
     void timerCallback() override;
 
 private:
-    // --- Setup helpers ---
-    void setupSlider(juce::Slider& slider,
-                     juce::Label& label,
+    void setupSlider(juce::Slider& slider, juce::Label& label,
                      const juce::String& text,
                      double minValue, double maxValue,
                      double interval, double startValue);
-
     void setupBypassButton(juce::TextButton& button, juce::Component& parent);
 
-    // --- DSP updates ---
     void updateToneCoefficient();
     void updateEqFilters();
     void updateReverbParameters();
+    void updatePreampFilters();
+    void updatePresenceFilter();
+    void updateCabFilters();
 
-    // --- Per-sample / block DSP ---
-    float processGateSample  (float inputSample);
-    float processDriveSample (float inputSample) const;
-    float processToneSample  (float inputSample, int channel);
-    void  processDelayBlock  (float* leftData, float* rightData, int numSamples);
+    float processGateSample   (float inputSample);
+    float processPreampSample (float inputSample);
+    float processToneSample   (float inputSample, int channel);
+    void  processDelayBlock   (float* leftData, float* rightData, int numSamples);
+    void  processCabBlock     (float* leftData, float* rightData, int numSamples);
 
-    // --- Layout / draw ---
     void layoutAmpControls (juce::Rectangle<int> contentArea);
-    void drawLevelMeter    (juce::Graphics& graphics, juce::Rectangle<int> meterArea) const;
+    void drawLevelMeter    (juce::Graphics& g, juce::Rectangle<int> meterArea) const;
     void openAudioSettingsWindow();
-    void drawAmpBackground (juce::Graphics& graphics, juce::Rectangle<int> area);
-    void drawAmpHeader     (juce::Graphics& graphics, juce::Rectangle<int> area);
-    void drawAmpFooter     (juce::Graphics& graphics, juce::Rectangle<int> area);
+    void drawAmpBackground (juce::Graphics& g, juce::Rectangle<int> area);
+    void drawAmpHeader     (juce::Graphics& g, juce::Rectangle<int> area);
+    void drawAmpFooter     (juce::Graphics& g, juce::Rectangle<int> area);
 
-    // --- Preset ---
     void savePreset();
     void loadPreset();
+    void loadIrFile();
     void applyPreset(const juce::XmlElement& xml);
 
-    // =========================================================================
-    // Components
     // =========================================================================
     std::unique_ptr<AmpLookAndFeel> ampLookAndFeel;
 
@@ -86,32 +82,27 @@ private:
     juce::TextButton audioSettingsButton { "Audio Settings" };
     juce::TextButton savePresetButton    { "Save Preset"    };
     juce::TextButton loadPresetButton    { "Load Preset"    };
+    juce::TextButton loadIrButton        { "Load IR"        };
 
-    // Input
-    juce::Slider gainSlider;   juce::Label gainLabel;
-    juce::Slider gateSlider;   juce::Label gateLabel;
-
-    // Amp
-    juce::Slider driveSlider;  juce::Label driveLabel;
-    juce::Slider toneSlider;   juce::Label toneLabel;
-    juce::Slider masterSlider; juce::Label masterLabel;
-
-    // EQ
-    juce::Slider bassSlider;   juce::Label bassLabel;
-    juce::Slider midSlider;    juce::Label midLabel;
-    juce::Slider trebleSlider; juce::Label trebleLabel;
-
-    // FX
+    juce::Slider gainSlider;     juce::Label gainLabel;
+    juce::Slider gateSlider;     juce::Label gateLabel;
+    juce::Slider driveSlider;    juce::Label driveLabel;
+    juce::Slider toneSlider;     juce::Label toneLabel;
+    juce::Slider masterSlider;   juce::Label masterLabel;
+    juce::Slider presenceSlider; juce::Label presenceLabel;
+    juce::Slider bassSlider;     juce::Label bassLabel;
+    juce::Slider midSlider;      juce::Label midLabel;
+    juce::Slider trebleSlider;   juce::Label trebleLabel;
     juce::Slider reverbSlider;    juce::Label reverbLabel;
     juce::Slider delayTimeSlider; juce::Label delayTimeLabel;
     juce::Slider delayMixSlider;  juce::Label delayMixLabel;
 
-    // Bypass buttons (toggle)
     juce::TextButton eqBypassButton     { "EQ"  };
     juce::TextButton reverbBypassButton { "REV" };
     juce::TextButton delayBypassButton  { "DLY" };
+    juce::TextButton cabBypassButton    { "CAB" };
 
-    // Labels
+    juce::Label irStatusLabel;
     juce::Label meterLabel;
     juce::Label clipLabel;
     juce::Label inputSectionLabel;
@@ -121,11 +112,10 @@ private:
     juce::Label bypassSectionLabel;
 
     // =========================================================================
-    // DSP state
-    // =========================================================================
     float inputGain       = 1.0f;
     float toneValue       = 0.55f;
-    float driveValue      = 0.22f;
+    float driveValue      = 0.5f;
+    float presenceValue   = 0.5f;
     float bassValue       = 0.0f;
     float midValue        = 0.0f;
     float trebleValue     = 0.0f;
@@ -135,46 +125,46 @@ private:
     float delayTimeMs     = 320.0f;
     float delayMixValue   = 0.18f;
 
-    // Bypass flags (audio thread reads these atomically enough for this use)
     bool eqBypassed     = false;
     bool reverbBypassed = false;
     bool delayBypassed  = false;
+    bool cabBypassed    = false;
 
-    // Level / clip
     float currentLevel  = 0.0f;
     bool  clipping      = false;
-    int   clipHoldTimer = 0;       // countdown in timer ticks (30 Hz)
+    int   clipHoldTimer = 0;
 
     double currentSampleRate = 44100.0;
 
-    // Tone (1-pole LP per channel)
     float toneCoefficient = 0.15f;
     float toneStateLeft   = 0.0f;
     float toneStateRight  = 0.0f;
 
-    // Noise gate
     float gateEnvelope = 0.0f;
     float gateGain     = 1.0f;
 
-    // EQ filters – true stereo
-    juce::IIRFilter bassFilterLeft,   bassFilterRight;
-    juce::IIRFilter midFilterLeft,    midFilterRight;
-    juce::IIRFilter trebleFilterLeft, trebleFilterRight;
+    juce::IIRFilter preHpFilterLeft,      preHpFilterRight;
+    juce::IIRFilter bassFilterLeft,       bassFilterRight;
+    juce::IIRFilter midFilterLeft,        midFilterRight;
+    juce::IIRFilter trebleFilterLeft,     trebleFilterRight;
+    juce::IIRFilter presenceFilterLeft,   presenceFilterRight;
+    juce::IIRFilter cabLoFilterLeft,      cabLoFilterRight;
+    juce::IIRFilter cabHiFilterLeft,      cabHiFilterRight;
+    juce::IIRFilter cabMidFilterLeft,     cabMidFilterRight;
 
-    // Reverb
+    juce::dsp::ProcessSpec   dspSpec;
+    juce::dsp::Convolution   convolution;
+    juce::AudioBuffer<float> irWorkBuffer;
+    bool irLoaded = false;
+
     juce::Reverb             reverbProcessor;
     juce::Reverb::Parameters reverbParameters;
 
-    // Delay
     juce::AudioBuffer<float> delayBuffer;
     int delayWritePosition = 0;
 
-    // File chooser (must outlive the async callback)
     std::unique_ptr<juce::FileChooser> fileChooser;
 
-    // =========================================================================
-    // Layout bounds (MainComponent coordinate space)
-    // =========================================================================
     juce::Rectangle<int> levelMeterBounds;
     juce::Rectangle<int> ampBodyBounds;
     juce::Rectangle<int> headerBounds;
