@@ -380,6 +380,7 @@ void MainComponent::loadNamFile()
                 std::unique_ptr<nam::DSP> newModel;
                 bool success = false;
                 juce::String errorMsg;
+                double expectedSR = -1.0;
 
                 try
                 {
@@ -397,6 +398,7 @@ void MainComponent::loadNamFile()
                     {
                         // Reset: sample rate + buffer size set eder, sonra prewarm çalıştırır
                         newModel->ResetAndPrewarm(currentSampleRate, currentBlockSize);
+                        expectedSR = newModel->GetExpectedSampleRate();
                         success = true;
                     }
                 }
@@ -405,7 +407,7 @@ void MainComponent::loadNamFile()
                     errorMsg = juce::String(e.what());
                 }
 
-                juce::MessageManager::callAsync([this, success, errorMsg,
+                juce::MessageManager::callAsync([this, success, errorMsg, expectedSR,
                                                   name = result.getFileNameWithoutExtension(),
                                                   model = std::move(newModel)]() mutable
                 {
@@ -417,9 +419,20 @@ void MainComponent::loadNamFile()
                             namModelPending = std::move(model);
                         }
                         namLoaded = true;
-                        namStatusLabel.setText("NAM: " + name, juce::dontSendNotification);
-                        namStatusLabel.setColour(juce::Label::textColourId,
-                                                  juce::Colour::fromRGB(100, 220, 100));
+                        juce::String statusText = "NAM: " + name;
+                        if (expectedSR > 0.0 && std::abs(expectedSR - currentSampleRate) > 1.0)
+                        {
+                            statusText += " [!SR: " + juce::String((int)expectedSR)
+                                          + " vs " + juce::String((int)currentSampleRate) + "]";
+                            namStatusLabel.setColour(juce::Label::textColourId,
+                                                      juce::Colour::fromRGB(255, 200, 60));
+                        }
+                        else
+                        {
+                            namStatusLabel.setColour(juce::Label::textColourId,
+                                                      juce::Colour::fromRGB(100, 220, 100));
+                        }
+                        namStatusLabel.setText(statusText, juce::dontSendNotification);
                     }
                     else
                     {
@@ -536,8 +549,8 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
 
         if (namLoaded && !namBypassed && namModel != nullptr)
         {
-            // NAM aktifken: drive knob = model input gain (0.5x - 3.0x)
-            s *= (0.5f + driveValue * 2.5f);
+            // drive=0.5 (default) → 0 dB (1.0x); drive=0 → -20 dB; drive=1 → +20 dB
+            s *= (float)std::pow(10.0, (driveValue - 0.5) * 2.0);
         }
         else
         {
