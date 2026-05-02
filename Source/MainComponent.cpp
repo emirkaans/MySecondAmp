@@ -549,8 +549,7 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
 
         if (namLoaded && !namBypassed && namModel != nullptr)
         {
-            // drive=0.5 (default) → 0 dB (1.0x); drive=0 → -20 dB; drive=1 → +20 dB
-            s *= (float)std::pow(10.0, (driveValue - 0.5) * 2.0);
+            // NAM modeli amp'ın tüm gain karakterini içeriyor, drive bypass
         }
         else
         {
@@ -702,18 +701,8 @@ void MainComponent::processNamBlock(float* leftData, float* rightData, int numSa
         namOutputPtr = namOutputBuf.data();
     }
 
-    // Input level normalization: NAM models expect audio at their training level (~-18 dBFS).
-    // If the model has input_level_dbu metadata, scale the input so the model sees
-    // the signal at the level it was trained with (-18 dBFS = 0 dBu reference).
-    float inputScale = 1.0f;
-    if (namModel->HasInputLevel())
-    {
-        const double inputLevelDbu = namModel->GetInputLevel();
-        inputScale = (float)std::pow(10.0, (-18.0 - inputLevelDbu) / 20.0);
-    }
-
     for (int i = 0; i < numSamples; ++i)
-        namInputBuf[(size_t)i] = (double)(leftData[i] * inputScale);
+        namInputBuf[(size_t)i] = (double)leftData[i];
 
     // Process: nam::DSP::process(input**, output**, numFrames)
     namModel->process(&namInputPtr, &namOutputPtr, numSamples);
@@ -833,7 +822,8 @@ void MainComponent::updatePreampFilters()
 
 void MainComponent::updatePresenceFilter()
 {
-    const float presenceDb = presenceValue * 10.0f;
+    // 0.0 = -10 dB, 0.5 = flat (0 dB), 1.0 = +10 dB
+    const float presenceDb = (presenceValue - 0.5f) * 20.0f;
     const auto presC = juce::IIRCoefficients::makeHighShelf(currentSampleRate, 3500.0, 0.707f,
                                                              juce::Decibels::decibelsToGain(presenceDb));
     presenceFilterLeft.setCoefficients(presC);
