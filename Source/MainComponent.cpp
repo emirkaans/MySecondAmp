@@ -575,15 +575,17 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
 
         if (rightData)
         {
+            float r = rightData[i];
             if (!eqBypassed)
             {
-                bassFilterRight.processSingleSampleRaw(s);
-                midFilterRight.processSingleSampleRaw(s);
-                trebleFilterRight.processSingleSampleRaw(s);
+                r = bassFilterRight.processSingleSampleRaw(r);
+                r = midFilterRight.processSingleSampleRaw(r);
+                r = trebleFilterRight.processSingleSampleRaw(r);
             }
-            processToneSample(s, 1);
-            presenceFilterRight.processSingleSampleRaw(s);
-            rightData[i] = s;
+            r = processToneSample(r, 1);
+            r = presenceFilterRight.processSingleSampleRaw(r);
+            r *= masterValue;
+            rightData[i] = r;
         }
 
         const float absSample = s < 0 ? -s : s;
@@ -687,17 +689,39 @@ void MainComponent::processNamBlock(float* leftData, float* rightData, int numSa
         namOutputPtr = namOutputBuf.data();
     }
 
-    // Copy float input to NAM_SAMPLE (double) buffer
+    // Input level normalization: NAM models expect audio at their training level (~-18 dBFS).
+    // If the model has input_level_dbu metadata, scale the input so the model sees
+    // the signal at the level it was trained with (-18 dBFS = 0 dBu reference).
+    float inputScale = 1.0f;
+    if (namModel->HasInputLevel())
+    {
+        const double inputLevelDbu = namModel->GetInputLevel();
+        inputScale = (float)std::pow(10.0, (-18.0 - inputLevelDbu) / 20.0);
+    }
+
     for (int i = 0; i < numSamples; ++i)
-        namInputBuf[(size_t)i] = (double)leftData[i];
+        namInputBuf[(size_t)i] = (double)(leftData[i] * inputScale);
 
     // Process: nam::DSP::process(input**, output**, numFrames)
     namModel->process(&namInputPtr, &namOutputPtr, numSamples);
 
-    // Copy NAM output back and apply to both channels
+    // Output normalization: NAM amp models have significant gain — without normalization
+    // the output can easily exceed 0 dBFS and cause harsh digital clipping ("bozuk ses").
+    // Use loudness metadata when available to target -18 dBFS; fall back to output_level_dbu.
+    float outputScale = 1.0f;
+    if (namModel->HasLoudness())
+    {
+        // Normalize model's output loudness to a fixed -18 dBFS target
+        outputScale = (float)std::pow(10.0, (-18.0 - namModel->GetLoudness()) / 20.0);
+    }
+    else if (namModel->HasOutputLevel())
+    {
+        outputScale = (float)std::pow(10.0, (-18.0 - namModel->GetOutputLevel()) / 20.0);
+    }
+
     for (int i = 0; i < numSamples; ++i)
     {
-        const float out = (float)namOutputBuf[(size_t)i];
+        const float out = (float)namOutputBuf[(size_t)i] * outputScale;
         leftData[i]  = out;
         if (rightData != leftData)
             rightData[i] = out;
