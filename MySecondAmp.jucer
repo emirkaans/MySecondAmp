@@ -3,6 +3,36 @@
 <JUCERPROJECT id="SE8tid" name="MySecondAmp" projectType="guiapp" useAppConfig="0"
               addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
   <MAINGROUP id="qg8HJK" name="MySecondAmp">
+    <GROUP id="{5B3CCFD4-9611-F757-002D-01A8BB16B1AA}" name="BuiltinResources">
+      <GROUP id="{637DB562-F093-A44B-B8F6-5DF9D9B5493A}" name="IR">
+        <FILE id="CrCFXp" name="BlendOfAll_dc.wav" compile="0" resource="1"
+              file="Source/BuiltinResources/IR/BlendOfAll_dc.wav"/>
+        <FILE id="hXD6rx" name="Judas Priest  Powerfire IR.wav" compile="0"
+              resource="1" file="Source/BuiltinResources/IR/Judas Priest  Powerfire IR.wav"/>
+        <FILE id="C4ASdq" name="Marshall G12 1 SM57 5.wav" compile="0" resource="1"
+              file="Source/BuiltinResources/IR/Marshall G12 1 SM57 5.wav"/>
+        <FILE id="FgNO5L" name="Marshall V30 3 SM58 1.wav" compile="0" resource="1"
+              file="Source/BuiltinResources/IR/Marshall V30 3 SM58 1.wav"/>
+        <FILE id="MPmZNP" name="Raining Blood R.wav" compile="0" resource="1"
+              file="Source/BuiltinResources/IR/Raining Blood R.wav"/>
+        <FILE id="nPzMKA" name="README.txt" compile="0" resource="1" file="Source/BuiltinResources/IR/README.txt"/>
+        <FILE id="FAwOVz" name="Res Super Brutal 2.wav" compile="0" resource="1"
+              file="Source/BuiltinResources/IR/Res Super Brutal 2.wav"/>
+      </GROUP>
+      <GROUP id="{D69BF985-D9F9-36FD-9ABF-4F57CC2A7D2B}" name="NAM">
+        <FILE id="xQRfPd" name="[AMP] 100W BOLD CRUSH Chugga412 SM57 - STD.nam"
+              compile="0" resource="1" file="Source/BuiltinResources/NAM/[AMP] 100W BOLD CRUSH Chugga412 SM57 - STD.nam"/>
+        <FILE id="YpqleP" name="[PRE] Lynx50 Ch2-Lo Noon #03 - STD.nam" compile="0"
+              resource="1" file="Source/BuiltinResources/NAM/[PRE] Lynx50 Ch2-Lo Noon #03 - STD.nam"/>
+        <FILE id="ncbak8" name="APP-6505Plus-Scooped-Gain-05.nam" compile="0"
+              resource="1" file="Source/BuiltinResources/NAM/APP-6505Plus-Scooped-Gain-05.nam"/>
+        <FILE id="rfrT1b" name="APP-6505Plus-Scooped-Gain-10.nam" compile="0"
+              resource="1" file="Source/BuiltinResources/NAM/APP-6505Plus-Scooped-Gain-10.nam"/>
+        <FILE id="W6OVNS" name="JCM800 2203 - P5 B5 M5 T5 MV7 G9 - AZG - 700.nam"
+              compile="0" resource="1" file="Source/BuiltinResources/NAM/JCM800 2203 - P5 B5 M5 T5 MV7 G9 - AZG - 700.nam"/>
+        <FILE id="fdxt9Z" name="README.txt" compile="0" resource="1" file="Source/BuiltinResources/NAM/README.txt"/>
+      </GROUP>
+    </GROUP>
     <GROUP id="{C6408EC8-45EA-D68D-4EBD-6AEA85AB5F0E}" name="Source">
       <FILE id="NA0cLB" name="Main.cpp" compile="1" resource="0" file="Source/Main.cpp"/>
       <FILE id="AUZk3x" name="MainComponent.h" compile="0" resource="0" file="Source/MainComponent.h"/>

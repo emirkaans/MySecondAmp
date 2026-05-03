@@ -17,26 +17,14 @@ struct BuiltInPreset
     size_t      size;
 };
 
-static const BuiltInPreset kBuiltInNamData[] = {
-    { "100W Bold Crush",    BinaryData::AMP_100W_BOLD_CRUSH_Chugga412_SM57__STD_nam, (size_t)BinaryData::AMP_100W_BOLD_CRUSH_Chugga412_SM57__STD_namSize },
-    { "Lynx50 Ch2 Lo",      BinaryData::PRE_Lynx50_Ch2Lo_Noon_03__STD_nam,           (size_t)BinaryData::PRE_Lynx50_Ch2Lo_Noon_03__STD_namSize           },
-    { "6505+ Gain 5",       BinaryData::APP6505PlusScoopedGain05_nam,                (size_t)BinaryData::APP6505PlusScoopedGain05_namSize                },
-    { "6505+ Gain 10",      BinaryData::APP6505PlusScoopedGain10_nam,                (size_t)BinaryData::APP6505PlusScoopedGain10_namSize                },
-    { "JCM800 2203",        BinaryData::JCM800_2203__P5_B5_M5_T5_MV7_G9__AZG__700_nam, (size_t)BinaryData::JCM800_2203__P5_B5_M5_T5_MV7_G9__AZG__700_namSize },
+static const BuiltInPreset kBuiltInNam[] = {
+    // { "Model Name", BinaryData::filename_nam, (size_t)BinaryData::filename_namSize },
 };
-static constexpr int        kBuiltInNamCount = (int)(sizeof(kBuiltInNamData) / sizeof(kBuiltInNamData[0]));
-static const BuiltInPreset* kBuiltInNam      = kBuiltInNamData;
-
-static const BuiltInPreset kBuiltInIrData[] = {
-    { "Blend of All",          BinaryData::BlendOfAll_dc_wav,               (size_t)BinaryData::BlendOfAll_dc_wavSize               },
-    { "Judas Priest Powerfire",BinaryData::Judas_Priest__Powerfire_IR_wav,  (size_t)BinaryData::Judas_Priest__Powerfire_IR_wavSize  },
-    { "Marshall G12 SM57",     BinaryData::Marshall_G12_1_SM57_5_wav,       (size_t)BinaryData::Marshall_G12_1_SM57_5_wavSize       },
-    { "Marshall V30 SM58",     BinaryData::Marshall_V30_3_SM58_1_wav,       (size_t)BinaryData::Marshall_V30_3_SM58_1_wavSize       },
-    { "Raining Blood",         BinaryData::Raining_Blood_R_wav,             (size_t)BinaryData::Raining_Blood_R_wavSize             },
-    { "Res Super Brutal",      BinaryData::Res_Super_Brutal_2_wav,          (size_t)BinaryData::Res_Super_Brutal_2_wavSize          },
+static const BuiltInPreset kBuiltInIr[] = {
+    // { "Cabinet Name", BinaryData::filename_wav, (size_t)BinaryData::filename_wavSize },
 };
-static constexpr int        kBuiltInIrCount  = (int)(sizeof(kBuiltInIrData) / sizeof(kBuiltInIrData[0]));
-static const BuiltInPreset* kBuiltInIr       = kBuiltInIrData;
+static constexpr int kBuiltInNamCount = (int)(sizeof(kBuiltInNam) / sizeof(kBuiltInNam[0]));
+static constexpr int kBuiltInIrCount  = (int)(sizeof(kBuiltInIr)  / sizeof(kBuiltInIr[0]));
 
 namespace
 {
