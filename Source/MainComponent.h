@@ -29,7 +29,8 @@ public:
 class MainComponent : public juce::AudioAppComponent,
                       public juce::Slider::Listener,
                       public juce::Button::Listener,
-                      public juce::Timer
+                      public juce::Timer,
+                      public juce::FileDragAndDropTarget
 {
 public:
     MainComponent();
@@ -74,10 +75,17 @@ private:
     void drawAmpHeader     (juce::Graphics& g, juce::Rectangle<int> area);
     void drawAmpFooter     (juce::Graphics& g, juce::Rectangle<int> area);
 
+    bool isInterestedInFileDrag(const juce::StringArray& files) override;
+    void filesDropped(const juce::StringArray& files, int x, int y) override;
+
     void savePreset();
     void loadPreset();
     void loadIrFile();
     void loadNamFile();
+    void loadIrFromFile(const juce::File& file);
+    void loadNamFromFile(const juce::File& file);
+    void saveLastPaths();
+    void loadLastPaths();
     void applyPreset(const juce::XmlElement& xml);
 
     // =========================================================================
@@ -207,6 +215,10 @@ private:
 
     // File chooser
     std::unique_ptr<juce::FileChooser> fileChooser;
+
+    juce::ApplicationProperties appProperties;
+    juce::File lastNamFile;
+    juce::File lastIrFile;
 
     // Layout bounds
     juce::Rectangle<int> levelMeterBounds;

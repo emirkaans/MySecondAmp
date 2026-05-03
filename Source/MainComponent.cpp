@@ -131,6 +131,12 @@ MainComponent::MainComponent()
     setSize(1280, 760);
     setAudioChannels(2, 2);
 
+    juce::PropertiesFile::Options opts;
+    opts.applicationName     = "MySecondAmp";
+    opts.filenameSuffix      = ".settings";
+    opts.osxLibrarySubFolder = "Application Support";
+    appProperties.setStorageParameters(opts);
+
     controlsViewport.setViewedComponent(&controlsContent, false);
     controlsViewport.setScrollBarsShown(false, false);
     addAndMakeVisible(controlsViewport);
@@ -224,6 +230,8 @@ MainComponent::MainComponent()
     updateCabFilters();
 
     startTimerHz(30);
+
+    juce::MessageManager::callAsync([this]() { loadLastPaths(); });
 }
 
 MainComponent::~MainComponent()
@@ -343,107 +351,180 @@ void MainComponent::loadIrFile()
 {
     fileChooser = std::make_unique<juce::FileChooser>(
         "Load Cabinet IR (WAV)",
-        juce::File::getSpecialLocation(juce::File::userDocumentsDirectory), "*.wav;*.WAV");
+        lastIrFile.existsAsFile() ? lastIrFile.getParentDirectory()
+                                  : juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
+        "*.wav;*.WAV");
     fileChooser->launchAsync(
         juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
         [this](const juce::FileChooser& fc)
         {
             const auto result = fc.getResult();
             if (result == juce::File{}) return;
-            convolution.loadImpulseResponse(result,
-                                            juce::dsp::Convolution::Stereo::yes,
-                                            juce::dsp::Convolution::Trim::yes,
-                                            0);
-            irLoaded = true;
-            juce::MessageManager::callAsync([this, name = result.getFileNameWithoutExtension()]()
-            {
-                irStatusLabel.setText("IR: " + name, juce::dontSendNotification);
-            });
+            loadIrFromFile(result);
         });
+}
+
+void MainComponent::loadIrFromFile(const juce::File& file)
+{
+    convolution.loadImpulseResponse(file,
+                                    juce::dsp::Convolution::Stereo::yes,
+                                    juce::dsp::Convolution::Trim::yes,
+                                    0);
+    irLoaded   = true;
+    lastIrFile = file;
+    saveLastPaths();
+    irStatusLabel.setText("IR: " + file.getFileNameWithoutExtension(), juce::dontSendNotification);
+    irStatusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(100, 210, 230));
 }
 
 void MainComponent::loadNamFile()
 {
     fileChooser = std::make_unique<juce::FileChooser>(
         "Load NAM Model",
-        juce::File::getSpecialLocation(juce::File::userDocumentsDirectory), "*.nam");
+        lastNamFile.existsAsFile() ? lastNamFile.getParentDirectory()
+                                   : juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
+        "*.nam");
     fileChooser->launchAsync(
         juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
         [this](const juce::FileChooser& fc)
         {
             const auto result = fc.getResult();
             if (result == juce::File{}) return;
-
-            // Load on a background thread — NAM parsing can take ~100-500ms
-            juce::Thread::launch([this, result]()
-            {
-                std::unique_ptr<nam::DSP> newModel;
-                bool success = false;
-                juce::String errorMsg;
-                double expectedSR = -1.0;
-
-                try
-                {
-                    // Use wstring on Windows to handle Unicode paths correctly
-                    const std::wstring namPathW(result.getFullPathName().toWideCharPointer());
-                    const std::filesystem::path namPath(namPathW);
-
-                    // Verify file exists before passing to NAM
-                    if (!std::filesystem::exists(namPath))
-                        throw std::runtime_error("File not found: " + result.getFullPathName().toStdString());
-
-                    newModel = nam::get_dsp(namPath);
-
-                    if (newModel != nullptr)
-                    {
-                        // Reset: sample rate + buffer size set eder, sonra prewarm çalıştırır
-                        newModel->ResetAndPrewarm(currentSampleRate, currentBlockSize);
-                        expectedSR = newModel->GetExpectedSampleRate();
-                        success = true;
-                    }
-                }
-                catch (const std::exception& e)
-                {
-                    errorMsg = juce::String(e.what());
-                }
-
-                juce::MessageManager::callAsync([this, success, errorMsg, expectedSR,
-                                                  name = result.getFileNameWithoutExtension(),
-                                                  model = std::move(newModel)]() mutable
-                {
-                    if (success && model != nullptr)
-                    {
-                        // Hand the model to the audio thread via the pending slot
-                        {
-                            std::lock_guard<std::mutex> lock(namSwapMutex);
-                            namModelPending = std::move(model);
-                        }
-                        namLoaded = true;
-                        juce::String statusText = "NAM: " + name;
-                        if (expectedSR > 0.0 && std::abs(expectedSR - currentSampleRate) > 1.0)
-                        {
-                            statusText += " [!SR: " + juce::String((int)expectedSR)
-                                          + " vs " + juce::String((int)currentSampleRate) + "]";
-                            namStatusLabel.setColour(juce::Label::textColourId,
-                                                      juce::Colour::fromRGB(255, 200, 60));
-                        }
-                        else
-                        {
-                            namStatusLabel.setColour(juce::Label::textColourId,
-                                                      juce::Colour::fromRGB(100, 220, 100));
-                        }
-                        namStatusLabel.setText(statusText, juce::dontSendNotification);
-                    }
-                    else
-                    {
-                        namStatusLabel.setText("NAM load failed: " + errorMsg,
-                                               juce::dontSendNotification);
-                        namStatusLabel.setColour(juce::Label::textColourId,
-                                                  juce::Colour::fromRGB(220, 80, 80));
-                    }
-                });
-            });
+            loadNamFromFile(result);
         });
+}
+
+void MainComponent::loadNamFromFile(const juce::File& file)
+{
+    juce::Thread::launch([this, file]()
+    {
+        std::unique_ptr<nam::DSP> newModel;
+        bool success = false;
+        juce::String errorMsg;
+        double expectedSR = -1.0;
+
+        try
+        {
+            const std::wstring namPathW(file.getFullPathName().toWideCharPointer());
+            const std::filesystem::path namPath(namPathW);
+
+            if (!std::filesystem::exists(namPath))
+                throw std::runtime_error("File not found: " + file.getFullPathName().toStdString());
+
+            newModel = nam::get_dsp(namPath);
+
+            if (newModel != nullptr)
+            {
+                newModel->ResetAndPrewarm(currentSampleRate, currentBlockSize);
+                expectedSR = newModel->GetExpectedSampleRate();
+                success = true;
+            }
+        }
+        catch (const std::exception& e)
+        {
+            errorMsg = juce::String(e.what());
+        }
+
+        juce::MessageManager::callAsync([this, success, errorMsg, expectedSR, file,
+                                          name = file.getFileNameWithoutExtension(),
+                                          model = std::move(newModel)]() mutable
+        {
+            if (success && model != nullptr)
+            {
+                {
+                    std::lock_guard<std::mutex> lock(namSwapMutex);
+                    namModelPending = std::move(model);
+                }
+                namLoaded   = true;
+                lastNamFile = file;
+                saveLastPaths();
+
+                juce::String statusText = "NAM: " + name;
+                if (expectedSR > 0.0 && std::abs(expectedSR - currentSampleRate) > 1.0)
+                {
+                    statusText += " [!SR: " + juce::String((int)expectedSR)
+                                  + " vs " + juce::String((int)currentSampleRate) + "]";
+                    namStatusLabel.setColour(juce::Label::textColourId,
+                                              juce::Colour::fromRGB(255, 200, 60));
+                }
+                else
+                {
+                    namStatusLabel.setColour(juce::Label::textColourId,
+                                              juce::Colour::fromRGB(100, 220, 100));
+                }
+                namStatusLabel.setText(statusText, juce::dontSendNotification);
+            }
+            else
+            {
+                namStatusLabel.setText("NAM load failed: " + errorMsg,
+                                       juce::dontSendNotification);
+                namStatusLabel.setColour(juce::Label::textColourId,
+                                          juce::Colour::fromRGB(220, 80, 80));
+            }
+        });
+    });
+}
+
+// =============================================================================
+// Drag & Drop
+// =============================================================================
+
+bool MainComponent::isInterestedInFileDrag(const juce::StringArray& files)
+{
+    for (const auto& f : files)
+    {
+        const auto ext = juce::File(f).getFileExtension().toLowerCase();
+        if (ext == ".nam" || ext == ".wav") return true;
+    }
+    return false;
+}
+
+void MainComponent::filesDropped(const juce::StringArray& files, int x, int y)
+{
+    juce::ignoreUnused(x, y);
+    for (const auto& f : files)
+    {
+        juce::File file(f);
+        const auto ext = file.getFileExtension().toLowerCase();
+        if      (ext == ".nam") loadNamFromFile(file);
+        else if (ext == ".wav") loadIrFromFile(file);
+    }
+}
+
+// =============================================================================
+// Persistent settings
+// =============================================================================
+
+void MainComponent::saveLastPaths()
+{
+    if (auto* props = appProperties.getUserSettings())
+    {
+        if (lastNamFile != juce::File{})
+            props->setValue("lastNamPath", lastNamFile.getFullPathName());
+        if (lastIrFile != juce::File{})
+            props->setValue("lastIrPath", lastIrFile.getFullPathName());
+        props->saveIfNeeded();
+    }
+}
+
+void MainComponent::loadLastPaths()
+{
+    if (auto* props = appProperties.getUserSettings())
+    {
+        const auto namPath = props->getValue("lastNamPath");
+        if (namPath.isNotEmpty())
+        {
+            const juce::File f(namPath);
+            if (f.existsAsFile()) loadNamFromFile(f);
+        }
+
+        const auto irPath = props->getValue("lastIrPath");
+        if (irPath.isNotEmpty())
+        {
+            const juce::File f(irPath);
+            if (f.existsAsFile()) loadIrFromFile(f);
+        }
+    }
 }
 
 void MainComponent::applyPreset(const juce::XmlElement& xml)
