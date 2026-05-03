@@ -210,15 +210,17 @@ MainComponent::MainComponent()
 
     // IR status
     irStatusLabel.setText("No IR loaded", juce::dontSendNotification);
-    irStatusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(180,160,120));
-    irStatusLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
+    irStatusLabel.setColour(juce::Label::textColourId,       juce::Colour::fromRGB(180,160,120));
+    irStatusLabel.setColour(juce::Label::backgroundColourId, juce::Colour::fromRGB(28,26,20));
+    irStatusLabel.setFont(juce::Font(juce::FontOptions(13.0f)));
     irStatusLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(irStatusLabel);
 
     // NAM status
     namStatusLabel.setText("No NAM loaded", juce::dontSendNotification);
-    namStatusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(140,200,140));
-    namStatusLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
+    namStatusLabel.setColour(juce::Label::textColourId,       juce::Colour::fromRGB(140,200,140));
+    namStatusLabel.setColour(juce::Label::backgroundColourId, juce::Colour::fromRGB(28,26,20));
+    namStatusLabel.setFont(juce::Font(juce::FontOptions(13.0f)));
     namStatusLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(namStatusLabel);
 
@@ -1066,9 +1068,11 @@ void MainComponent::resized()
     loadIrButton.setBounds       (headerBounds.getRight()-660, headerBounds.getY()+12, 140, 32);
     loadNamButton.setBounds      (headerBounds.getRight()-810, headerBounds.getY()+12, 140, 32);
 
-    // Status labels (bottom-left of header)
-    irStatusLabel.setBounds (headerBounds.getX()+24, headerBounds.getBottom()-28, 280, 16);
-    namStatusLabel.setBounds(headerBounds.getX()+24, headerBounds.getBottom()-12, 280, 16);
+    // Status labels — below the button row, right side of header
+    const int statusX = headerBounds.getRight() - 806;
+    const int statusY = headerBounds.getY() + 50;
+    namStatusLabel.setBounds(statusX, statusY,      800, 18);
+    irStatusLabel.setBounds (statusX, statusY + 20, 800, 18);
 
     // Meter zone
     const int meterLabelH  = 18, meterH = 14, meterW = 360;
